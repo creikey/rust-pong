@@ -22,6 +22,82 @@ fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
     }
 }
 
+fn dimension_strength(
+    rl: &RaylibHandle,
+    positive_key: KeyboardKey,
+    negative_key: KeyboardKey,
+) -> f32 {
+    return key_strength(rl, positive_key) - key_strength(rl, negative_key);
+}
+
+struct Paddle {
+    position: Vector2,
+    size: Vector2,
+}
+
+impl Paddle {
+    fn new(size: Vector2, screen_size: Vector2, on_left_side: bool) -> Paddle {
+        let pos: Vector2;
+        if on_left_side {
+            pos = Vector2::new(0.0, 0.0);
+        } else {
+            pos = Vector2::new(screen_size.x - size.x, 0.0);
+        }
+        return Paddle {
+            position: pos,
+            size: size,
+        };
+    }
+    fn process_movement(&mut self, vertical_input: f32, dt: f32, screen_size: Vector2) {
+        self.position.y += vertical_input * dt * self.size.y * 1.5;
+        self.position.y = clamp(self.position.y, 0.0, screen_size.y - self.size.y);
+    }
+    fn ball_overlaps(&self, ball: &Ball) -> bool {
+        let local_ball_pos = ball.position - self.position;
+        return (local_ball_pos.x >= -ball.size && local_ball_pos.x <= self.size.x + ball.size)
+            && (local_ball_pos.y >= -ball.size && local_ball_pos.y <= self.size.y + ball.size);
+    }
+    fn draw(&self, d: &mut RaylibDrawHandle) {
+        d.draw_rectangle_v(self.position, self.size, Color::BLACK);
+    }
+}
+
+struct Ball {
+    position: Vector2,
+    movement: Vector2,
+    size: f32,
+}
+
+impl Ball {
+    fn new(position: Vector2, movement: Vector2, size: f32) -> Ball {
+        return Ball {
+            position: position,
+            movement: movement,
+            size: size,
+        };
+    }
+    fn draw(&self, d: &mut RaylibDrawHandle) {
+        d.draw_circle_v(self.position, self.size, Color::RED);
+    }
+    // Moves along the movement vector and bounces on paddles
+    fn process_movement(
+        &mut self,
+        dt: f32,
+        speed: f32,
+        screen_size: Vector2,
+        left_paddle: &Paddle,
+        right_paddle: &Paddle,
+    ) {
+        self.position += self.movement * dt * speed;
+        if left_paddle.ball_overlaps(self) || right_paddle.ball_overlaps(self) {
+            self.movement.x *= -1.0;
+        }
+        if self.position.y <= self.size || self.position.y >= screen_size.y - self.size {
+            self.movement.y *= -1.0;
+        }
+    }
+}
+
 fn main() {
     let screen_size = Vector2::new(1000.0, 800.0);
     let (mut rl, thread) = raylib::init()
@@ -33,67 +109,40 @@ fn main() {
     let ball_size = 20.0;
     let ball_speed = paddle_size.x * 10.0;
 
-    let mut l_paddle_pos = 0.0;
-    let mut r_paddle_pos = 0.0;
-    let mut ball_pos = screen_size / 2.0;
-    let mut ball_direction = Vector2::new(1.0, -1.0).normalized();
+    let mut l_paddle = Paddle::new(paddle_size, screen_size, true);
+    let mut r_paddle = Paddle::new(paddle_size, screen_size, false);
+    let mut ball = Ball::new(
+        screen_size / 2.0,
+        Vector2::new(1.0, -1.0).normalized(),
+        ball_size,
+    );
 
     while !rl.window_should_close() {
-        let l_vertical =
-            key_strength(&rl, KeyboardKey::KEY_S) - key_strength(&rl, KeyboardKey::KEY_W);
-        l_paddle_pos += l_vertical * rl.get_frame_time() * paddle_size.y * 1.5;
-        l_paddle_pos = clamp(l_paddle_pos, 0.0, screen_size.y - paddle_size.y);
+        l_paddle.process_movement(
+            dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
+            rl.get_frame_time(),
+            screen_size,
+        );
+        r_paddle.process_movement(
+            dimension_strength(&rl, KeyboardKey::KEY_K, KeyboardKey::KEY_I),
+            rl.get_frame_time(),
+            screen_size,
+        );
 
-        let r_vertical =
-            key_strength(&rl, KeyboardKey::KEY_K) - key_strength(&rl, KeyboardKey::KEY_I);
-        r_paddle_pos += r_vertical * rl.get_frame_time() * paddle_size.y * 1.5;
-        r_paddle_pos = clamp(r_paddle_pos, 0.0, screen_size.y - paddle_size.y);
-
-        ball_pos += ball_direction * rl.get_frame_time() * ball_speed;
-        let ball_hit;
-        let paddle_pos_to_check;
-        let ball_snap_to_x_pos;
-        if ball_pos.x + ball_size > screen_size.x - paddle_size.x {
-            ball_hit = true;
-            paddle_pos_to_check = r_paddle_pos;
-            ball_snap_to_x_pos = screen_size.x - paddle_size.x - ball_size;
-        } else if ball_pos.x - ball_size < paddle_size.x {
-            ball_hit = true;
-            paddle_pos_to_check = l_paddle_pos;
-            ball_snap_to_x_pos = paddle_size.x + ball_size;
-        } else {
-            ball_hit = false;
-            paddle_pos_to_check = 0.0;
-            ball_snap_to_x_pos = 0.0;
-        }
-        if ball_hit
-            && ball_pos.y >= paddle_pos_to_check
-            && ball_pos.y <= paddle_pos_to_check + paddle_size.y
-        {
-            ball_direction.x *= -1.0;
-            ball_pos.x = ball_snap_to_x_pos;
-        }
-        if ball_pos.y - ball_size < 0.0 || ball_pos.y + ball_size > screen_size.y {
-            ball_direction.y *= -1.0;
-        }
+        ball.process_movement(
+            rl.get_frame_time(),
+            ball_speed,
+            screen_size,
+            &l_paddle,
+            &r_paddle,
+        );
+        // check for ball collisions
 
         let mut d = rl.begin_drawing(&thread);
 
         d.clear_background(Color::WHITE);
-        d.draw_rectangle(
-            0,
-            l_paddle_pos as i32,
-            paddle_size.x as i32,
-            paddle_size.y as i32,
-            Color::BLACK,
-        );
-        d.draw_rectangle(
-            (screen_size.x - paddle_size.x) as i32,
-            r_paddle_pos as i32,
-            paddle_size.x as i32,
-            paddle_size.y as i32,
-            Color::BLACK,
-        );
-        d.draw_circle_v(ball_pos, ball_size, Color::RED);
+        l_paddle.draw(&mut d);
+        r_paddle.draw(&mut d);
+        ball.draw(&mut d);
     }
 }
