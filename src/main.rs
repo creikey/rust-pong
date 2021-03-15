@@ -22,6 +22,17 @@ fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
     }
 }
 
+fn sign(n: f32) -> f32 {
+    if n.abs() <= 0.01 {
+        return 0.0;
+    }
+    if n > 0.0 {
+        return 1.0;
+    } else {
+        return -1.0;
+    }
+}
+
 fn dimension_strength(
     rl: &RaylibHandle,
     positive_key: KeyboardKey,
@@ -33,6 +44,7 @@ fn dimension_strength(
 struct Paddle {
     position: Vector2,
     size: Vector2,
+    velocity: f32,
 }
 
 impl Paddle {
@@ -46,10 +58,12 @@ impl Paddle {
         return Paddle {
             position: pos,
             size: size,
+            velocity: 0.0,
         };
     }
     fn process_movement(&mut self, vertical_input: f32, dt: f32, screen_size: Vector2) {
-        self.position.y += vertical_input * dt * self.size.y * 1.5;
+        self.velocity = vertical_input * self.size.y * 1.5;
+        self.position.y += self.velocity * dt;
         self.position.y = clamp(self.position.y, 0.0, screen_size.y - self.size.y);
     }
     fn ball_overlaps(&self, ball: &Ball) -> bool {
@@ -65,17 +79,26 @@ impl Paddle {
 struct Ball {
     position: Vector2,
     movement: Vector2,
+    increased_speed: f32,
     size: f32,
 }
 
 impl Ball {
-    fn new(position: Vector2, movement: Vector2, size: f32) -> Ball {
+    fn new(size: f32) -> Ball {
         return Ball {
-            position: position,
-            movement: movement,
+            position: Vector2::new(0.0, 0.0),
+            movement: Vector2::new(1.0, 0.0),
+            increased_speed: 0.0,
             size: size,
         };
     }
+
+    fn reset(&mut self, screen_size: Vector2) {
+        self.position = screen_size / 2.0;
+        self.movement = Vector2::new(self.movement.x*-1.0, 0.0).normalized();
+        self.increased_speed = 0.0;
+    }
+
     fn draw(&self, d: &mut RaylibDrawHandle) {
         d.draw_circle_v(self.position, self.size, Color::RED);
     }
@@ -88,13 +111,53 @@ impl Ball {
         left_paddle: &Paddle,
         right_paddle: &Paddle,
     ) {
-        self.position += self.movement * dt * speed;
-        if left_paddle.ball_overlaps(self) || right_paddle.ball_overlaps(self) {
-            self.movement.x *= -1.0;
+        if left_paddle.ball_overlaps(self) {
+            self.movement.x *= -2.0;
+            self.position.x = left_paddle.position.x + left_paddle.size.x + self.size;
+            self.movement.y += sign(left_paddle.velocity);
+            self.movement.normalize();
         }
-        if self.position.y <= self.size || self.position.y >= screen_size.y - self.size {
+        if right_paddle.ball_overlaps(self) {
+            self.movement.x *= -2.0;
+            self.position.x = right_paddle.position.x - self.size;
+            self.movement.y += sign(right_paddle.velocity);
+            self.movement.normalize();
+        }
+        if self.position.y <= self.size {
             self.movement.y *= -1.0;
+            self.position.y = self.size;
         }
+        if self.position.y >= screen_size.y - self.size {
+            self.movement.y *= -1.0;
+            self.position.y = screen_size.y - self.size;
+        }
+        self.position += self.movement * dt * (speed + self.increased_speed);
+        self.increased_speed += dt * 30.0;
+    }
+}
+
+struct Score {
+    value: i32,
+    size: i32,
+    left_side: bool,
+}
+
+impl Score {
+    fn draw(&self, d: &mut RaylibDrawHandle, screen_size: Vector2) {
+        let score_string = self.value.to_string();
+        let to_draw_middle_x;
+        if self.left_side {
+            to_draw_middle_x = screen_size.x / 4.0;
+        } else {
+            to_draw_middle_x = (3.0 * screen_size.x) / 4.0;
+        }
+        d.draw_text(
+            &score_string,
+            to_draw_middle_x as i32 - (measure_text(&score_string, self.size) / 2),
+            20,
+            self.size,
+            Color::BLACK,
+        );
     }
 }
 
@@ -107,17 +170,29 @@ fn main() {
 
     let paddle_size = Vector2::new(25.0, 175.0);
     let ball_size = 20.0;
-    let ball_speed = paddle_size.x * 10.0;
+    let mut ball_speed = paddle_size.x * 20.0;
+    let starting_ball_position = screen_size / 2.0;
+    let score_font_size = 80;
 
     let mut l_paddle = Paddle::new(paddle_size, screen_size, true);
     let mut r_paddle = Paddle::new(paddle_size, screen_size, false);
-    let mut ball = Ball::new(
-        screen_size / 2.0,
-        Vector2::new(1.0, -1.0).normalized(),
-        ball_size,
-    );
+    let mut ball = Ball::new(ball_size);
+    ball.reset(screen_size);
+
+    let mut l_score = Score {
+        value: 0,
+        size: score_font_size,
+        left_side: true,
+    };
+    let mut r_score = Score {
+        value: 0,
+        size: score_font_size,
+        left_side: false,
+    };
 
     while !rl.window_should_close() {
+        ball_speed += rl.get_frame_time() * 10.0;
+
         l_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
             rl.get_frame_time(),
@@ -136,7 +211,15 @@ fn main() {
             &l_paddle,
             &r_paddle,
         );
-        // check for ball collisions
+
+        if ball.position.x <= -ball_size {
+            r_score.value += 1;
+            ball.reset(screen_size);
+        }
+        if ball.position.x >= screen_size.x + ball_size {
+            l_score.value += 1;
+            ball.reset(screen_size);
+        }
 
         let mut d = rl.begin_drawing(&thread);
 
@@ -144,5 +227,7 @@ fn main() {
         l_paddle.draw(&mut d);
         r_paddle.draw(&mut d);
         ball.draw(&mut d);
+        l_score.draw(&mut d, screen_size);
+        r_score.draw(&mut d, screen_size);
     }
 }
