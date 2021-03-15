@@ -1,5 +1,7 @@
 use raylib::prelude::*;
 
+const SCREEN_SIZE: Vector2 = Vector2::new(1000.0, 800.0);
+
 fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
     if rl.is_key_down(key) {
         return 1.0;
@@ -36,18 +38,12 @@ struct Paddle {
 }
 
 impl Paddle {
-    fn new(
-        size: Vector2,
-        force: f32,
-        friction: f32,
-        screen_size: Vector2,
-        on_left_side: bool,
-    ) -> Paddle {
+    fn new(size: Vector2, force: f32, friction: f32, on_left_side: bool) -> Paddle {
         let pos: Vector2;
         if on_left_side {
             pos = Vector2::new(0.0, 0.0);
         } else {
-            pos = Vector2::new(screen_size.x - size.x, 0.0);
+            pos = Vector2::new(SCREEN_SIZE.x - size.x, 0.0);
         }
         return Paddle {
             position: pos,
@@ -57,7 +53,7 @@ impl Paddle {
             velocity: 0.0,
         };
     }
-    fn process_movement(&mut self, vertical_input: f32, dt: f32, screen_size: Vector2) {
+    fn process_movement(&mut self, vertical_input: f32, dt: f32) {
         self.velocity += vertical_input * (self.force + self.friction) * dt;
         let friction_effect = -sign(self.velocity) * self.friction * dt;
         if self.velocity.abs() < friction_effect {
@@ -66,7 +62,7 @@ impl Paddle {
             self.velocity += friction_effect;
         }
         self.position.y += self.velocity * dt;
-        if self.position.y <= 0.0 || self.position.y + self.size.y >= screen_size.y {
+        if self.position.y <= 0.0 || self.position.y + self.size.y >= SCREEN_SIZE.y {
             self.velocity *= -1.0;
         }
     }
@@ -97,8 +93,8 @@ impl Ball {
         };
     }
 
-    fn reset(&mut self, screen_size: Vector2) {
-        self.position = screen_size / 2.0;
+    fn reset(&mut self) {
+        self.position = SCREEN_SIZE / 2.0;
         self.movement = Vector2::new(self.movement.x * -1.0, 0.0).normalized();
         self.increased_speed = 0.0;
     }
@@ -111,7 +107,6 @@ impl Ball {
         &mut self,
         dt: f32,
         speed: f32,
-        screen_size: Vector2,
         left_paddle: &Paddle,
         right_paddle: &Paddle,
     ) {
@@ -131,9 +126,9 @@ impl Ball {
             self.movement.y *= -1.0;
             self.position.y = self.size;
         }
-        if self.position.y >= screen_size.y - self.size {
+        if self.position.y >= SCREEN_SIZE.y - self.size {
             self.movement.y *= -1.0;
-            self.position.y = screen_size.y - self.size;
+            self.position.y = SCREEN_SIZE.y - self.size;
         }
         self.position += self.movement * dt * (speed + self.increased_speed);
         self.increased_speed += dt * 50.0;
@@ -147,13 +142,13 @@ struct Score {
 }
 
 impl Score {
-    fn draw(&self, d: &mut RaylibDrawHandle, screen_size: Vector2) {
+    fn draw(&self, d: &mut RaylibDrawHandle) {
         let score_string = self.value.to_string();
         let to_draw_middle_x;
         if self.left_side {
-            to_draw_middle_x = screen_size.x / 4.0;
+            to_draw_middle_x = SCREEN_SIZE.x / 4.0;
         } else {
-            to_draw_middle_x = (3.0 * screen_size.x) / 4.0;
+            to_draw_middle_x = (3.0 * SCREEN_SIZE.x) / 4.0;
         }
         d.draw_text(
             &score_string,
@@ -166,9 +161,8 @@ impl Score {
 }
 
 fn main() {
-    let screen_size = Vector2::new(1000.0, 800.0);
     let (mut rl, thread) = raylib::init()
-        .size(screen_size.x as i32, screen_size.y as i32)
+        .size(SCREEN_SIZE.x as i32, SCREEN_SIZE.y as i32)
         .title("Rust Pong")
         .build();
 
@@ -176,25 +170,13 @@ fn main() {
     let paddle_force = 1000.0;
     let paddle_friction = 300.0;
     let ball_size = 20.0;
-    let mut ball_speed = paddle_size.x * 20.0;
+    let ball_speed = paddle_size.x * 20.0;
     let score_font_size = 80;
 
-    let mut l_paddle = Paddle::new(
-        paddle_size,
-        paddle_force,
-        paddle_friction,
-        screen_size,
-        true,
-    );
-    let mut r_paddle = Paddle::new(
-        paddle_size,
-        paddle_force,
-        paddle_friction,
-        screen_size,
-        false,
-    );
+    let mut l_paddle = Paddle::new(paddle_size, paddle_force, paddle_friction, true);
+    let mut r_paddle = Paddle::new(paddle_size, paddle_force, paddle_friction, false);
     let mut ball = Ball::new(ball_size);
-    ball.reset(screen_size);
+    ball.reset();
 
     let mut l_score = Score {
         value: 0,
@@ -211,29 +193,21 @@ fn main() {
         l_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
             rl.get_frame_time(),
-            screen_size,
         );
         r_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_K, KeyboardKey::KEY_I),
             rl.get_frame_time(),
-            screen_size,
         );
 
-        ball.process_movement(
-            rl.get_frame_time(),
-            ball_speed,
-            screen_size,
-            &l_paddle,
-            &r_paddle,
-        );
+        ball.process_movement(rl.get_frame_time(), ball_speed, &l_paddle, &r_paddle);
 
         if ball.position.x <= -ball_size {
             r_score.value += 1;
-            ball.reset(screen_size);
+            ball.reset();
         }
-        if ball.position.x >= screen_size.x + ball_size {
+        if ball.position.x >= SCREEN_SIZE.x + ball_size {
             l_score.value += 1;
-            ball.reset(screen_size);
+            ball.reset();
         }
 
         let mut d = rl.begin_drawing(&thread);
@@ -242,7 +216,7 @@ fn main() {
         l_paddle.draw(&mut d);
         r_paddle.draw(&mut d);
         ball.draw(&mut d);
-        l_score.draw(&mut d, screen_size);
-        r_score.draw(&mut d, screen_size);
+        l_score.draw(&mut d);
+        r_score.draw(&mut d);
     }
 }
