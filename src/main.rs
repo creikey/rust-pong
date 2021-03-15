@@ -12,20 +12,9 @@ const GAME_CONFIG: GameConfig = GameConfig {
 
 fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
     if rl.is_key_down(key) {
-        return 1.0;
+        1.0
     } else {
-        return 0.0;
-    }
-}
-
-fn sign(n: f32) -> f32 {
-    if n.abs() <= 0.01 {
-        return 0.0;
-    }
-    if n > 0.0 {
-        return 1.0;
-    } else {
-        return -1.0;
+        0.0
     }
 }
 
@@ -34,31 +23,33 @@ fn dimension_strength(
     positive_key: KeyboardKey,
     negative_key: KeyboardKey,
 ) -> f32 {
-    return key_strength(rl, positive_key) - key_strength(rl, negative_key);
+    key_strength(rl, positive_key) - key_strength(rl, negative_key)
 }
 
 struct Paddle {
     position: Vector2,
     velocity: f32,
+    on_left_side: bool,
 }
 
 impl Paddle {
     fn new(on_left_side: bool) -> Paddle {
-        let pos: Vector2;
-        if on_left_side {
-            pos = Vector2::new(0.0, 0.0);
+        let pos = if on_left_side {
+            Vector2::new(0.0, 0.0)
         } else {
-            pos = Vector2::new(SCREEN_SIZE.x - GAME_CONFIG.paddle_size.x, 0.0);
-        }
-        return Paddle {
+            Vector2::new(SCREEN_SIZE.x - GAME_CONFIG.paddle_size.x, 0.0)
+        };
+
+        Paddle {
             position: pos,
             velocity: 0.0,
-        };
+            on_left_side: on_left_side,
+        }
     }
     fn process_movement(&mut self, vertical_input: f32, dt: f32) {
         self.velocity +=
             vertical_input * (GAME_CONFIG.paddle_force + GAME_CONFIG.paddle_friction) * dt;
-        let friction_effect = -sign(self.velocity) * GAME_CONFIG.paddle_friction * dt;
+        let friction_effect = -self.velocity.signum() * GAME_CONFIG.paddle_friction * dt;
         if self.velocity.abs() < friction_effect {
             self.velocity = 0.0;
         } else {
@@ -69,12 +60,20 @@ impl Paddle {
             self.velocity *= -1.0;
         }
     }
+    fn get_ball_hit_x(&self) -> f32 {
+        if self.on_left_side {
+            self.position.x + GAME_CONFIG.paddle_size.x + GAME_CONFIG.ball_size
+        } else {
+            self.position.x - GAME_CONFIG.ball_size
+        }
+    }
     fn ball_overlaps(&self, ball: &Ball) -> bool {
         let local_ball_pos = ball.position - self.position;
-        return (local_ball_pos.x >= -GAME_CONFIG.ball_size
+
+        (local_ball_pos.x >= -GAME_CONFIG.ball_size
             && local_ball_pos.x <= GAME_CONFIG.paddle_size.x + GAME_CONFIG.ball_size)
             && (local_ball_pos.y >= -GAME_CONFIG.ball_size
-                && local_ball_pos.y <= GAME_CONFIG.paddle_size.y + GAME_CONFIG.ball_size);
+                && local_ball_pos.y <= GAME_CONFIG.paddle_size.y + GAME_CONFIG.ball_size)
     }
     fn draw(&self, d: &mut RaylibDrawHandle) {
         d.draw_rectangle_v(self.position, GAME_CONFIG.paddle_size, Color::BLACK);
@@ -95,7 +94,8 @@ impl Ball {
             increased_speed: 0.0,
         };
         to_return.reset();
-        return to_return;
+
+        to_return
     }
 
     fn reset(&mut self) {
@@ -107,21 +107,23 @@ impl Ball {
     fn draw(&self, d: &mut RaylibDrawHandle) {
         d.draw_circle_v(self.position, GAME_CONFIG.ball_size, Color::RED);
     }
-    // Moves along the movement vector and bounces on paddles
+
+    /// Moves along the movement vector and bounces on paddles
     fn process_movement(&mut self, dt: f32, left_paddle: &Paddle, right_paddle: &Paddle) {
-        if left_paddle.ball_overlaps(self) {
-            self.movement.x *= -2.0;
-            self.position.x =
-                left_paddle.position.x + GAME_CONFIG.paddle_size.x + GAME_CONFIG.ball_size;
-            self.movement.y += sign(left_paddle.velocity);
-            self.movement.normalize();
+        // bounce off of paddles
+        let paddles = [left_paddle, right_paddle];
+        for paddle in paddles.iter() {
+            if paddle.ball_overlaps(self) {
+                self.movement.x *= -2.0;
+                self.position.x = paddle.get_ball_hit_x();
+                if paddle.velocity.abs() > 0.01 {
+                    self.movement.y += paddle.velocity.signum();
+                }
+                self.movement.normalize();
+            }
         }
-        if right_paddle.ball_overlaps(self) {
-            self.movement.x *= -2.0;
-            self.position.x = right_paddle.position.x - GAME_CONFIG.ball_size;
-            self.movement.y += sign(right_paddle.velocity);
-            self.movement.normalize();
-        }
+
+        // bounce off of top and bottom walls
         if self.position.y <= GAME_CONFIG.ball_size {
             self.movement.y *= -1.0;
             self.position.y = GAME_CONFIG.ball_size;
@@ -130,6 +132,8 @@ impl Ball {
             self.movement.y *= -1.0;
             self.position.y = SCREEN_SIZE.y - GAME_CONFIG.ball_size;
         }
+
+        // move and increase speed over time
         self.position += self.movement * dt * (GAME_CONFIG.ball_speed + self.increased_speed);
         self.increased_speed += dt * 50.0;
     }
