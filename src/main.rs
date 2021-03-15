@@ -44,11 +44,19 @@ fn dimension_strength(
 struct Paddle {
     position: Vector2,
     size: Vector2,
+    force: f32,
+    friction: f32,
     velocity: f32,
 }
 
 impl Paddle {
-    fn new(size: Vector2, screen_size: Vector2, on_left_side: bool) -> Paddle {
+    fn new(
+        size: Vector2,
+        force: f32,
+        friction: f32,
+        screen_size: Vector2,
+        on_left_side: bool,
+    ) -> Paddle {
         let pos: Vector2;
         if on_left_side {
             pos = Vector2::new(0.0, 0.0);
@@ -58,13 +66,23 @@ impl Paddle {
         return Paddle {
             position: pos,
             size: size,
+            force: force,
+            friction: friction,
             velocity: 0.0,
         };
     }
     fn process_movement(&mut self, vertical_input: f32, dt: f32, screen_size: Vector2) {
-        self.velocity = vertical_input * self.size.y * 1.5;
+        self.velocity += vertical_input * (self.force + self.friction) * dt;
+        let friction_effect = -sign(self.velocity) * self.friction * dt;
+        if self.velocity.abs() < friction_effect {
+            self.velocity = 0.0;
+        } else {
+            self.velocity += friction_effect;
+        }
         self.position.y += self.velocity * dt;
-        self.position.y = clamp(self.position.y, 0.0, screen_size.y - self.size.y);
+        if self.position.y <= 0.0 || self.position.y + self.size.y >= screen_size.y {
+            self.velocity *= -1.0;
+        }
     }
     fn ball_overlaps(&self, ball: &Ball) -> bool {
         let local_ball_pos = ball.position - self.position;
@@ -95,7 +113,7 @@ impl Ball {
 
     fn reset(&mut self, screen_size: Vector2) {
         self.position = screen_size / 2.0;
-        self.movement = Vector2::new(self.movement.x*-1.0, 0.0).normalized();
+        self.movement = Vector2::new(self.movement.x * -1.0, 0.0).normalized();
         self.increased_speed = 0.0;
     }
 
@@ -169,13 +187,27 @@ fn main() {
         .build();
 
     let paddle_size = Vector2::new(25.0, 175.0);
+    let paddle_force = 1000.0;
+    let paddle_friction = 300.0;
     let ball_size = 20.0;
     let mut ball_speed = paddle_size.x * 20.0;
     let starting_ball_position = screen_size / 2.0;
     let score_font_size = 80;
 
-    let mut l_paddle = Paddle::new(paddle_size, screen_size, true);
-    let mut r_paddle = Paddle::new(paddle_size, screen_size, false);
+    let mut l_paddle = Paddle::new(
+        paddle_size,
+        paddle_force,
+        paddle_friction,
+        screen_size,
+        true,
+    );
+    let mut r_paddle = Paddle::new(
+        paddle_size,
+        paddle_force,
+        paddle_friction,
+        screen_size,
+        false,
+    );
     let mut ball = Ball::new(ball_size);
     ball.reset(screen_size);
 
