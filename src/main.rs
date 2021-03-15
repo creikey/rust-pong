@@ -1,19 +1,5 @@
 use raylib::prelude::*;
 
-fn clamp(d: f32, min: f32, max: f32) -> f32 {
-    let t;
-    if d < min {
-        t = min;
-    } else {
-        t = d;
-    }
-    if t > max {
-        return max;
-    } else {
-        return t;
-    }
-}
-
 fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
     if rl.is_key_down(key) {
         return 1.0;
@@ -150,7 +136,7 @@ impl Ball {
             self.position.y = screen_size.y - self.size;
         }
         self.position += self.movement * dt * (speed + self.increased_speed);
-        self.increased_speed += dt * 30.0;
+        self.increased_speed += dt * 50.0;
     }
 }
 
@@ -191,7 +177,6 @@ fn main() {
     let paddle_friction = 300.0;
     let ball_size = 20.0;
     let mut ball_speed = paddle_size.x * 20.0;
-    let starting_ball_position = screen_size / 2.0;
     let score_font_size = 80;
 
     let mut l_paddle = Paddle::new(
@@ -223,8 +208,6 @@ fn main() {
     };
 
     while !rl.window_should_close() {
-        ball_speed += rl.get_frame_time() * 10.0;
-
         l_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
             rl.get_frame_time(),
