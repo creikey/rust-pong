@@ -50,7 +50,7 @@ impl Paddle {
         self.velocity +=
             vertical_input * (GAME_CONFIG.paddle_force + GAME_CONFIG.paddle_friction) * dt;
         let friction_effect = -self.velocity.signum() * GAME_CONFIG.paddle_friction * dt;
-        if self.velocity.abs() < friction_effect {
+        if self.velocity.abs() < friction_effect.abs() {
             self.velocity = 0.0;
         } else {
             self.velocity += friction_effect;
