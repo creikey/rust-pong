@@ -198,8 +198,19 @@ impl Game {
             right_score: Score::new(false),
         }
     }
+}
 
-    fn process(&mut self, rl: &RaylibHandle, dt: f32) {
+impl Scene for Game {
+    fn draw(&self, d: &mut RaylibDrawHandle) {
+        d.clear_background(Color::WHITE);
+        self.left_paddle.draw(d);
+        self.right_paddle.draw(d);
+        self.ball.draw(d);
+        self.left_score.draw(d);
+        self.right_score.draw(d);
+    }
+    fn process(&mut self, rl: &RaylibHandle) {
+        let dt = rl.get_frame_time();
         self.left_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
             dt,
@@ -219,15 +230,15 @@ impl Game {
             self.ball.reset();
         }
     }
-
-    fn draw(&self, d: &mut RaylibDrawHandle) {
-        d.clear_background(Color::WHITE);
-        self.left_paddle.draw(d);
-        self.right_paddle.draw(d);
-        self.ball.draw(d);
-        self.left_score.draw(d);
-        self.right_score.draw(d);
+    fn get_new_scene(&self) -> Option<Box<dyn Scene>> {
+        None
     }
+}
+
+trait Scene {
+    fn process(&mut self, rl: &RaylibHandle);
+    fn draw(&self, d: &mut RaylibDrawHandle);
+    fn get_new_scene(&self) -> Option<Box<dyn Scene>>;
 }
 
 fn main() {
@@ -236,13 +247,18 @@ fn main() {
         .title("Rust Pong")
         .build();
 
-    let mut game = Game::new();
+    let mut cur_scene: Box<dyn Scene> = Box::new(Game::new());
 
     while !rl.window_should_close() {
-        game.process(&rl, rl.get_frame_time());
+        cur_scene.process(&rl);
 
         let mut d = rl.begin_drawing(&thread);
 
-        game.draw(&mut d);
+        cur_scene.draw(&mut d);
+
+        let new_scene = cur_scene.get_new_scene();
+        if new_scene.is_some() {
+            cur_scene = new_scene.unwrap();
+        }
     }
 }
