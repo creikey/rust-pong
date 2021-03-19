@@ -1,7 +1,7 @@
 use raylib::prelude::*;
 
 const SCREEN_SIZE: Vector2 = Vector2::new(1000.0, 800.0);
-const GAME_CONFIG: GameConfig = GameConfig {
+const GAME_CONFIG: PongGameConfig = PongGameConfig {
     paddle_size: Vector2::new(25.0, 175.0),
     paddle_force: 1000.0,
     paddle_friction: 300.0,
@@ -171,7 +171,7 @@ impl Score {
     }
 }
 
-struct GameConfig {
+struct PongGameConfig {
     paddle_size: Vector2,
     paddle_force: f32,
     paddle_friction: f32,
@@ -180,7 +180,7 @@ struct GameConfig {
     score_font_size: i32,
 }
 
-struct Game {
+struct PongGame {
     left_paddle: Paddle,
     right_paddle: Paddle,
     ball: Ball,
@@ -188,9 +188,9 @@ struct Game {
     right_score: Score,
 }
 
-impl Game {
-    fn new() -> Game {
-        Game {
+impl PongGame {
+    fn new() -> PongGame {
+        PongGame {
             left_paddle: Paddle::new(true),
             right_paddle: Paddle::new(false),
             ball: Ball::new(),
@@ -200,7 +200,7 @@ impl Game {
     }
 }
 
-impl Scene for Game {
+impl Scene for PongGame {
     fn draw(&self, d: &mut RaylibDrawHandle) {
         d.clear_background(Color::WHITE);
         self.left_paddle.draw(d);
@@ -235,6 +235,36 @@ impl Scene for Game {
     }
 }
 
+struct TitleScreen {
+    play_pong_game: bool,
+}
+
+impl TitleScreen {
+    fn new() -> Self {
+        TitleScreen {
+            play_pong_game: false,
+        }
+    }
+}
+
+impl Scene for TitleScreen {
+    fn process(&mut self, rl: &RaylibHandle) {
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON) {
+            self.play_pong_game = true;
+        }
+    }
+    fn draw(&self, d: &mut RaylibDrawHandle) {
+        d.clear_background(Color::WHITE);
+    }
+    fn get_new_scene(&self) -> Option<Box<dyn Scene>> {
+        if self.play_pong_game {
+            Some(Box::new(PongGame::new()))
+        } else {
+            None
+        }
+    }
+}
+
 trait Scene {
     fn process(&mut self, rl: &RaylibHandle);
     fn draw(&self, d: &mut RaylibDrawHandle);
@@ -247,7 +277,7 @@ fn main() {
         .title("Rust Pong")
         .build();
 
-    let mut cur_scene: Box<dyn Scene> = Box::new(Game::new());
+    let mut cur_scene: Box<dyn Scene> = Box::new(TitleScreen::new());
 
     while !rl.window_should_close() {
         cur_scene.process(&rl);
