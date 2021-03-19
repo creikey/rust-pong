@@ -26,6 +26,33 @@ fn dimension_strength(
     key_strength(rl, positive_key) - key_strength(rl, negative_key)
 }
 
+fn rect_new_ex(position: Vector2, size: Vector2) -> Rectangle {
+    Rectangle::new(position.x, position.y, size.x, size.y)
+}
+
+fn rect_pos(r: &Rectangle) -> Vector2 {
+    Vector2::new(r.x, r.y)
+}
+
+fn rect_size(r: &Rectangle) -> Vector2 {
+    Vector2::new(r.width, r.height)
+}
+
+/* tabling for now to use raylib rectangle
+struct Rectangle {
+    upper_left_corner: Vector2,
+    size: Vector2,
+}
+
+impl Rectangle {
+    fn has_point(&self, point: Vector2) -> bool {
+        point.x >= self.upper_left_corner.x
+            && point.x <= self.upper_left_corner.x + self.size.x
+            && point.y >= self.upper_left_corner.y
+            && point.y <= self.upper_left_corner.y + self.size.y
+    }
+}*/
+
 struct Paddle {
     position: Vector2,
     velocity: f32,
@@ -75,7 +102,7 @@ impl Paddle {
             && (local_ball_pos.y >= -GAME_CONFIG.ball_size
                 && local_ball_pos.y <= GAME_CONFIG.paddle_size.y + GAME_CONFIG.ball_size)
     }
-    fn draw(&self, d: &mut RaylibDrawHandle) {
+    fn draw(&mut self, d: &mut RaylibDrawHandle) {
         d.draw_rectangle_v(self.position, GAME_CONFIG.paddle_size, Color::BLACK);
     }
 }
@@ -104,7 +131,7 @@ impl Ball {
         self.increased_speed = 0.0;
     }
 
-    fn draw(&self, d: &mut RaylibDrawHandle) {
+    fn draw(&mut self, d: &mut RaylibDrawHandle) {
         d.draw_circle_v(self.position, GAME_CONFIG.ball_size, Color::RED);
     }
 
@@ -152,7 +179,7 @@ impl Score {
         }
     }
 
-    fn draw(&self, d: &mut RaylibDrawHandle) {
+    fn draw(&mut self, d: &mut RaylibDrawHandle) {
         let score_string = self.value.to_string();
         let to_draw_middle_x;
         if self.left_side {
@@ -201,7 +228,7 @@ impl PongGame {
 }
 
 impl Scene for PongGame {
-    fn draw(&self, d: &mut RaylibDrawHandle) {
+    fn draw(&mut self, d: &mut RaylibDrawHandle) {
         d.clear_background(Color::WHITE);
         self.left_paddle.draw(d);
         self.right_paddle.draw(d);
@@ -248,13 +275,39 @@ impl TitleScreen {
 }
 
 impl Scene for TitleScreen {
-    fn process(&mut self, rl: &RaylibHandle) {
-        if rl.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON) {
+    fn process(&mut self, rl: &RaylibHandle) {}
+    fn draw(&mut self, d: &mut RaylibDrawHandle) {
+        d.clear_background(Color::GRAY);
+
+        let screen_size = Vector2::new(d.get_screen_width() as f32, d.get_screen_height() as f32);
+        let font_size = 50.0;
+        let size = measure_text_ex(d.get_font_default(), "PLAY", font_size, 1.0);
+        let bounding_box = rect_new_ex(screen_size / 2.0 - size / 2.0, size);
+        let hovered = bounding_box.check_collision_point_rec(d.get_mouse_position());
+
+        let background_color = if hovered {
+            Color::new(255, 255, 255, 255)
+        } else {
+            Color::new(220, 220, 220, 255)
+        };
+
+        d.draw_rectangle_v(
+            rect_pos(&bounding_box),
+            rect_size(&bounding_box),
+            background_color,
+        );
+        d.draw_text_ex(
+            d.get_font_default(),
+            "PLAY",
+            Vector2::new(bounding_box.x, bounding_box.y),
+            font_size,
+            1.0,
+            Color::BLACK,
+        );
+
+        if d.is_mouse_button_pressed(MouseButton::MOUSE_LEFT_BUTTON) && hovered {
             self.play_pong_game = true;
         }
-    }
-    fn draw(&self, d: &mut RaylibDrawHandle) {
-        d.clear_background(Color::WHITE);
     }
     fn get_new_scene(&self) -> Option<Box<dyn Scene>> {
         if self.play_pong_game {
@@ -267,7 +320,7 @@ impl Scene for TitleScreen {
 
 trait Scene {
     fn process(&mut self, rl: &RaylibHandle);
-    fn draw(&self, d: &mut RaylibDrawHandle);
+    fn draw(&mut self, d: &mut RaylibDrawHandle);
     fn get_new_scene(&self) -> Option<Box<dyn Scene>>;
 }
 
