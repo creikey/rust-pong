@@ -1,2 +1,2 @@
 # rust-pong
-Pong in Rust and raylib
+Networked pong with rollback in Rust and raylib
