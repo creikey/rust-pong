@@ -47,7 +47,7 @@ fn button(d: &mut RaylibDrawHandle, upper_left_corner: Vector2, size: Vector2, t
     d.draw_text_ex(
         d.get_font_default(),
         text,
-        upper_left_corner + size / 2.0 - text_size/2.0,
+        upper_left_corner + size / 2.0 - text_size / 2.0,
         font_size,
         1.0,
         Color::BLACK,
@@ -79,23 +79,22 @@ impl Scene for TitleScreen {
 
         let num_buttons = 3;
         let button_size = Vector2::new(700.0, 60.0);
-        let set_of_buttons_size = button_size + Vector2::new(0.0, button_size.y*((num_buttons - 1) as f32));
+        let set_of_buttons_size =
+            button_size + Vector2::new(0.0, button_size.y * ((num_buttons - 1) as f32));
         let spacing = 10.0;
         let mut cur_place_pos = screen_size / 2.0 - set_of_buttons_size / 2.0;
-        
+
         if button(d, cur_place_pos, button_size, "HOST") {
             self.play_pong_game = true;
         }
         cur_place_pos.y += button_size.y + spacing;
 
-        if button(d, cur_place_pos, button_size, "JOIN FROM CLIPBOARD") {
-        }
+        if button(d, cur_place_pos, button_size, "JOIN FROM CLIPBOARD") {}
         cur_place_pos.y += button_size.y + spacing;
 
         if button(d, cur_place_pos, button_size, "EXIT") {
             self.should_quit = true;
         }
-
     }
     fn get_new_scene(&self) -> Option<Box<dyn Scene>> {
         if self.play_pong_game {
