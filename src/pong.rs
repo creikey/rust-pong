@@ -232,4 +232,7 @@ impl Scene for PongGame {
     fn get_new_scene(&self) -> Option<Box<dyn Scene>> {
         None
     }
+    fn should_quit(&self) -> bool {
+        false
+    }
 }
