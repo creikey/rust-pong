@@ -40,7 +40,7 @@ fn button(d: &mut RaylibDrawHandle, upper_left_corner: Vector2, size: Vector2, t
     let background_color = if hovered {
         Color::new(255, 255, 255, 255)
     } else {
-        Color::new(220, 220, 220, 255)
+        Color::new(170, 170, 170, 255)
     };
 
     d.draw_rectangle_v(
@@ -82,14 +82,18 @@ impl Scene for TitleScreen {
 
         let screen_size = Vector2::new(d.get_screen_width() as f32, d.get_screen_height() as f32);
 
-        let num_buttons = 2;
-        let button_size = Vector2::new(250.0, 60.0);
+        let num_buttons = 3;
+        let button_size = Vector2::new(700.0, 60.0);
         let set_of_buttons_size = button_size + Vector2::new(0.0, button_size.y*((num_buttons - 1) as f32));
         let spacing = 10.0;
         let mut cur_place_pos = screen_size / 2.0 - set_of_buttons_size / 2.0;
         
-        if button(d, cur_place_pos, button_size, "PLAY") {
+        if button(d, cur_place_pos, button_size, "HOST") {
             self.play_pong_game = true;
+        }
+        cur_place_pos.y += button_size.y + spacing;
+
+        if button(d, cur_place_pos, button_size, "JOIN FROM CLIPBOARD") {
         }
         cur_place_pos.y += button_size.y + spacing;
 
