@@ -200,7 +200,7 @@ impl PongGame {
 }
 
 impl Scene for PongGame {
-    fn draw(&mut self, d: &mut RaylibDrawHandle) {
+    fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle) {
         d.clear_background(Color::WHITE);
         self.left_paddle.draw(d);
         self.right_paddle.draw(d);
@@ -208,7 +208,7 @@ impl Scene for PongGame {
         self.left_score.draw(d);
         self.right_score.draw(d);
     }
-    fn process(&mut self, rl: &RaylibHandle) {
+    fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
         let dt = rl.get_frame_time();
         self.left_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
@@ -228,9 +228,6 @@ impl Scene for PongGame {
             self.left_score.value += 1;
             self.ball.reset();
         }
-    }
-    fn get_new_scene(&self) -> Option<Box<dyn Scene>> {
-        None
     }
     fn should_quit(&self) -> bool {
         false
