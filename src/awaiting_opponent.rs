@@ -1,6 +1,7 @@
 use crate::*;
 
 use std::net::TcpStream;
+use std::io::{Read, Write};
 
 use imui::*;
 
@@ -12,18 +13,33 @@ pub struct AwaitingOpponent {
 
 impl AwaitingOpponent {
     pub fn new(stream: TcpStream, lobby_code: i32) -> Self {
+        stream.set_nonblocking(true);
         AwaitingOpponent {
             lobby_stream: stream,
             lobby_code: lobby_code,
-            text_to_copy_to_clipboard: None
+            text_to_copy_to_clipboard: None,
         }
     }
 }
 
 impl Scene for AwaitingOpponent {
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
-        if false {
-            _s.new_scene = Some(Box::new(pong::PongGame::new()));
+        let mut receive_buffer = [0];
+        match self.lobby_stream.read_exact(&mut receive_buffer) {
+            Ok(_) => {
+                if receive_buffer[0] == 1 {
+                    // player joined our lobby!
+
+                    _s.new_scene = Some(Box::new(pong::PongGame::new(
+                        self.lobby_stream.try_clone().unwrap(),
+                    )));
+                } else {
+                    println!("Wonky thing received from server: {}", receive_buffer[0]);
+                }
+            }
+            Err(e) => {
+                println!("Failed to receive data from server: {}", e);
+            }
         }
         match &self.text_to_copy_to_clipboard {
             Some(text) => {

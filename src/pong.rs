@@ -1,5 +1,8 @@
 use crate::*;
 
+use std::io::{Read, Write};
+use std::net::TcpStream;
+
 const GAME_CONFIG: PongGameConfig = PongGameConfig {
     paddle_size: Vector2::new(25.0, 175.0),
     paddle_force: 1000.0,
@@ -185,16 +188,19 @@ pub struct PongGame {
     ball: Ball,
     left_score: Score,
     right_score: Score,
+    opponent_stream: TcpStream,
 }
 
 impl PongGame {
-    pub fn new() -> PongGame {
+    pub fn new(opponent_stream: TcpStream) -> PongGame {
+        opponent_stream.set_nonblocking(true).unwrap();
         PongGame {
             left_paddle: Paddle::new(true),
             right_paddle: Paddle::new(false),
             ball: Ball::new(),
             left_score: Score::new(true),
             right_score: Score::new(false),
+            opponent_stream: opponent_stream,
         }
     }
 }
@@ -209,6 +215,18 @@ impl Scene for PongGame {
         self.right_score.draw(d);
     }
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
+        let mut data = [0];
+        match self.opponent_stream.read_exact(&mut data) {
+            Ok(_) => {
+                println!("Received byte: {}", data[0]);
+            }
+            Err(e) => {
+                println!("Failed to receive byte: {}", e);
+            }
+        }
+        println!("Sending byte 7...");
+        self.opponent_stream.write(& [7]).unwrap();
+
         let dt = rl.get_frame_time();
         self.left_paddle.process_movement(
             dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),

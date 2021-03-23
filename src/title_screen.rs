@@ -63,11 +63,9 @@ impl Scene for TitleScreen {
 
                             if response != 0 {
                                 println!("New lobby created! Lobby code: {}", response);
-                                _s.new_scene = Some(Box::new(awaiting_opponent::AwaitingOpponent::new(stream, response)));
-                                /*Some(Box::new(awaiting_opponent::AwaitingOpponent {
-                                    lobby_stream: stream,
-                                    lobby_code: response,
-                                }));*/
+                                _s.new_scene = Some(Box::new(
+                                    awaiting_opponent::AwaitingOpponent::new(stream, response),
+                                ));
                             } else {
                                 println!("Error creating lobby");
                             }
@@ -85,7 +83,53 @@ impl Scene for TitleScreen {
         }
         cur_place_pos.y += button_size.y + spacing;
 
-        if button(d, cur_place_pos, button_size, "JOIN FROM CLIPBOARD") {}
+        if button(d, cur_place_pos, button_size, "JOIN FROM CLIPBOARD") {
+            let lobby_code_string = d.get_clipboard_text().unwrap(); // TODO handle error where clipboard content is not a string, a utf8 error instead
+            let lobby_code = lobby_code_string.parse::<i32>().unwrap(); // TODO handle error where clipboard content is not a proper lobby code
+
+            match TcpStream::connect("localhost:3333") {
+                Ok(mut stream) => {
+                    println!("Successfully connected to server in port 3333");
+                    println!("Requesting to join lobby {}", lobby_code);
+                    let lobby_code_bytes = lobby_code.to_le_bytes();
+                    let msg: [u8; 5] = [
+                        2,
+                        lobby_code_bytes[0],
+                        lobby_code_bytes[1],
+                        lobby_code_bytes[2],
+                        lobby_code_bytes[3],
+                    ];
+
+                    stream.write(&msg).unwrap();
+                    println!("Sent join lobby command, awaiting lobby code...");
+
+                    // TODO refactor this into a function based off of the host code
+                    let mut data = [0 as u8; 4]; // using 4 byte buffer
+                    match stream.read_exact(&mut data) {
+                        Ok(_) => {
+                            let response: i32 = i32::from_le_bytes(data);
+
+                            if response == 200 {
+                                println!("Joined Lobby!");
+                                _s.new_scene = Some(Box::new(pong::PongGame::new(stream)));
+                            } else {
+                                println!(
+                                    "Error creating lobby, response from server: {}",
+                                    response
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            println!("Failed to receive data: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Failed to connect: {}", e);
+                    self.failed_to_connect_to_lobby = true;
+                }
+            }
+        }
         cur_place_pos.y += button_size.y + spacing;
 
         if button(d, cur_place_pos, button_size, "EXIT") {

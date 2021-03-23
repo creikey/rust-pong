@@ -85,6 +85,9 @@ fn handle_client(
         println!("Waiting for client to connect...");
         let mut other_stream = rx.unwrap().recv().unwrap(); // TODO need some way to timeout on this
 
+        // let the inviter know that somebody has joined and they can start funneling packets now
+        stream.write(&[1]).unwrap();
+
         // Now that I have both streams, I can funnel packets back and forth. First I remove
         // my lobby from the dict, as I am no longer waiting for a connection with recv
         let mut dict = lobby_to_host_transmitter.lock().unwrap();
