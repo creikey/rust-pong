@@ -1,4 +1,8 @@
-use crate::*;
+use raylib::prelude::*;
+
+// TODO create ImUI struct that manages UI rect logic and draws in one function. This would allow
+// stuff that modifies raylib data like setting the clipboard, as the immediate mode UI logic
+// would be done in process
 
 fn rect_new_ex(position: Vector2, size: Vector2) -> Rectangle {
     Rectangle::new(position.x, position.y, size.x, size.y)

@@ -1,26 +1,20 @@
 use raylib::prelude::*;
 
+mod pong; // get the arena size
+mod title_screen; // first scene in the game
+mod scene; // scene api application
+
+// for some reason these have to be declared in this module
+// for other modules to use them like `use crate::imui::*`,
+// they are not actually used in the main function
 mod imui;
 mod awaiting_opponent;
-mod pong;
-mod title_screen;
 
-pub const SCREEN_SIZE: Vector2 = Vector2::new(1000.0, 800.0);
-
-pub struct SceneAPI {
-    pub new_scene: Option<Box<dyn Scene>>,
-}
-
-pub trait Scene {
-    fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle);
-    fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle);
-
-    fn should_quit(&self) -> bool;
-}
+use scene::*;
 
 fn main() {
     let (mut rl, thread) = raylib::init()
-        .size(SCREEN_SIZE.x as i32, SCREEN_SIZE.y as i32)
+        .size(pong::GAME_CONFIG.arena_size.x as i32, pong::GAME_CONFIG.arena_size.y as i32)
         .title("Rust Pong")
         .build();
 

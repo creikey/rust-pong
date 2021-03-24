@@ -1,10 +1,12 @@
-use crate::*;
+use raylib::prelude::*;
 
 use std::io;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use imui::*;
+use crate::imui::*;
+use crate::scene::*;
+use crate::pong;
 
 pub struct AwaitingOpponent {
     pub lobby_stream: TcpStream,

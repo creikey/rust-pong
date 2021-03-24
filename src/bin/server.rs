@@ -123,6 +123,8 @@ fn handle_client(
         let mut dict = lobby_to_host_transmitter.lock().unwrap();
         (*dict).remove_entry(&my_lobby_code.unwrap()).unwrap();
 
+        // Don't block while polling between two sockets as reading/writing
+        // from both with separate threads is not supported
         stream.set_nonblocking(true).unwrap();
         other_stream.set_nonblocking(true).unwrap();
 

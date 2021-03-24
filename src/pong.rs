@@ -1,10 +1,13 @@
-use crate::*;
+use crate::scene::*;
+
+use raylib::prelude::*;
 
 use std::io;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-const GAME_CONFIG: PongGameConfig = PongGameConfig {
+pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
+    arena_size: Vector2::new(1000.0, 800.0),
     paddle_size: Vector2::new(25.0, 175.0),
     paddle_force: 1000.0,
     paddle_friction: 300.0,
@@ -40,7 +43,7 @@ impl Paddle {
         let pos = if on_left_side {
             Vector2::new(0.0, 0.0)
         } else {
-            Vector2::new(SCREEN_SIZE.x - GAME_CONFIG.paddle_size.x, 0.0)
+            Vector2::new(GAME_CONFIG.arena_size.x - GAME_CONFIG.paddle_size.x, 0.0)
         };
 
         Paddle {
@@ -59,7 +62,7 @@ impl Paddle {
             self.velocity += friction_effect;
         }
         self.position.y += self.velocity * dt;
-        if self.position.y <= 0.0 || self.position.y + GAME_CONFIG.paddle_size.y >= SCREEN_SIZE.y {
+        if self.position.y <= 0.0 || self.position.y + GAME_CONFIG.paddle_size.y >= GAME_CONFIG.arena_size.y {
             self.velocity *= -1.0;
         }
     }
@@ -102,7 +105,7 @@ impl Ball {
     }
 
     fn reset(&mut self) {
-        self.position = SCREEN_SIZE / 2.0;
+        self.position = GAME_CONFIG.arena_size / 2.0;
         self.movement = Vector2::new(self.movement.x * -1.0, 0.0).normalized();
         self.increased_speed = 0.0;
     }
@@ -131,9 +134,9 @@ impl Ball {
             self.movement.y *= -1.0;
             self.position.y = GAME_CONFIG.ball_size;
         }
-        if self.position.y >= SCREEN_SIZE.y - GAME_CONFIG.ball_size {
+        if self.position.y >= GAME_CONFIG.arena_size.y - GAME_CONFIG.ball_size {
             self.movement.y *= -1.0;
-            self.position.y = SCREEN_SIZE.y - GAME_CONFIG.ball_size;
+            self.position.y = GAME_CONFIG.arena_size.y - GAME_CONFIG.ball_size;
         }
 
         // move and increase speed over time
@@ -159,9 +162,9 @@ impl Score {
         let score_string = self.value.to_string();
         let to_draw_middle_x;
         if self.left_side {
-            to_draw_middle_x = SCREEN_SIZE.x / 4.0;
+            to_draw_middle_x = GAME_CONFIG.arena_size.x / 4.0;
         } else {
-            to_draw_middle_x = (3.0 * SCREEN_SIZE.x) / 4.0;
+            to_draw_middle_x = (3.0 * GAME_CONFIG.arena_size.x) / 4.0;
         }
         d.draw_text(
             &score_string,
@@ -174,7 +177,8 @@ impl Score {
     }
 }
 
-struct PongGameConfig {
+pub struct PongGameConfig {
+    pub arena_size: Vector2,
     paddle_size: Vector2,
     paddle_force: f32,
     paddle_friction: f32,
@@ -248,7 +252,7 @@ impl Scene for PongGame {
             self.right_score.value += 1;
             self.ball.reset();
         }
-        if self.ball.position.x >= SCREEN_SIZE.x + GAME_CONFIG.ball_size {
+        if self.ball.position.x >= GAME_CONFIG.arena_size.x + GAME_CONFIG.ball_size {
             self.left_score.value += 1;
             self.ball.reset();
         }
