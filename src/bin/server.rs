@@ -1,10 +1,39 @@
 use rand;
 use std::collections::HashMap;
+use std::io;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time;
+
+fn funnel_packets(
+    source_stream: &mut TcpStream,
+    target_stream: &mut TcpStream,
+) -> Result<(), io::Error> {
+    let mut buffer = [0];
+
+    match source_stream.read(&mut buffer) {
+        Ok(_size) => {
+            target_stream.write(&buffer).unwrap(); // TODO fix unclean error here where connection is forcibly closed
+
+            Ok(())
+        }
+        Err(e) => match e.kind() {
+            io::ErrorKind::WouldBlock => Ok(()),
+            _ => {
+                println!(
+                    "While funnneling packets from hoster -> joiner, an error occured: {}",
+                    e
+                );
+                source_stream.shutdown(Shutdown::Both).unwrap();
+
+                Err(e)
+            }
+        },
+    }
+}
 
 fn handle_client(
     mut stream: TcpStream,
@@ -86,6 +115,7 @@ fn handle_client(
         let mut other_stream = rx.unwrap().recv().unwrap(); // TODO need some way to timeout on this
 
         // let the inviter know that somebody has joined and they can start funneling packets now
+        println!("Client connected! Letting the host know...");
         stream.write(&[1]).unwrap();
 
         // Now that I have both streams, I can funnel packets back and forth. First I remove
@@ -93,32 +123,26 @@ fn handle_client(
         let mut dict = lobby_to_host_transmitter.lock().unwrap();
         (*dict).remove_entry(&my_lobby_code.unwrap()).unwrap();
 
+        stream.set_nonblocking(true).unwrap();
+        other_stream.set_nonblocking(true).unwrap();
 
-        let mut cloned_stream = stream.try_clone().unwrap();
-        let mut cloned_other_stream = other_stream.try_clone().unwrap();
-        thread::spawn(move || {
-            let mut buffer: [u8; 1] = [0];
-            match cloned_other_stream.read(&mut buffer) {
-                Ok(_size) => {
-                    cloned_stream.write(&buffer).unwrap();
-                }
-                Err(_) => {
-                    println!("While funnneling packets, an error occured.");
-                    cloned_other_stream.shutdown(Shutdown::Both).unwrap();
-                }
+        println!("Funneling packets between two clients in loop...");
+        let mut e = Ok(());
+        loop {
+            // TODO this only funnels one byte per millisecond, terrible. Should be polling in the funnel_packets function
+            // until there are no more bytes in the stream, maybe buffer of 256 and fill as much of it as possible?
+            e = funnel_packets(&mut stream, &mut other_stream);
+            if e.is_err() {
+                break;
             }
-        });
-
-        let mut buffer: [u8; 1] = [0];
-        match stream.read(&mut buffer) {
-            Ok(_size) => {
-                other_stream.write(&buffer).unwrap();
+            e = funnel_packets(&mut other_stream, &mut stream);
+            if e.is_err() {
+                break;
             }
-            Err(_) => {
-                println!("While funnneling packets, an error occured.");
-                stream.shutdown(Shutdown::Both).unwrap();
-            }
+            thread::sleep(time::Duration::from_millis(1));
         }
+
+        println!("Stopped funneling packets: {}", e.err().unwrap());
     }
 }
 
