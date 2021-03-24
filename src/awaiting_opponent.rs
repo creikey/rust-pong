@@ -1,7 +1,8 @@
 use crate::*;
 
-use std::net::TcpStream;
+use std::io;
 use std::io::{Read, Write};
+use std::net::TcpStream;
 
 use imui::*;
 
@@ -13,7 +14,7 @@ pub struct AwaitingOpponent {
 
 impl AwaitingOpponent {
     pub fn new(stream: TcpStream, lobby_code: i32) -> Self {
-        stream.set_nonblocking(true);
+        stream.set_nonblocking(true).unwrap();
         AwaitingOpponent {
             lobby_stream: stream,
             lobby_code: lobby_code,
@@ -38,7 +39,12 @@ impl Scene for AwaitingOpponent {
                 }
             }
             Err(e) => {
-                println!("Failed to receive data from server: {}", e);
+                match e.kind() {
+                    io::ErrorKind::WouldBlock => {}
+                    _ => {
+                        println!("Failed to receive data from server: {}", e);
+                    }
+                }
             }
         }
         match &self.text_to_copy_to_clipboard {

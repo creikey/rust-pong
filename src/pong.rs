@@ -1,5 +1,6 @@
 use crate::*;
 
+use std::io;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
@@ -221,7 +222,12 @@ impl Scene for PongGame {
                 println!("Received byte: {}", data[0]);
             }
             Err(e) => {
-                println!("Failed to receive byte: {}", e);
+                match e.kind() {
+                    io::ErrorKind::WouldBlock => {}
+                    _ => {
+                        println!("Failed to receive data from server: {}", e);
+                    }
+                }
             }
         }
         println!("Sending byte 7...");
