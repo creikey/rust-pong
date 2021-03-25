@@ -35,6 +35,7 @@ impl Scene for AwaitingOpponent {
 
                     _s.new_scene = Some(Box::new(pong::PongGame::new(
                         self.lobby_stream.try_clone().unwrap(),
+                        true
                     )));
                 } else {
                     println!("Wonky thing received from server: {}", receive_buffer[0]);

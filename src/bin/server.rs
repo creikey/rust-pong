@@ -7,17 +7,19 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
+use std::mem::size_of;
+
+use rust_pong::pong::PongInputState;
 
 fn funnel_packets(
     source_stream: &mut TcpStream,
     target_stream: &mut TcpStream,
 ) -> Result<(), io::Error> {
-    let mut buffer = [0];
+    let mut buffer = [0u8; size_of::<PongInputState>()];
 
-    match source_stream.read(&mut buffer) {
-        Ok(_size) => {
+    match source_stream.read_exact(&mut buffer) {
+        Ok(_) => {
             target_stream.write(&buffer).unwrap(); // TODO fix unclean error here where connection is forcibly closed
-
             Ok(())
         }
         Err(e) => match e.kind() {

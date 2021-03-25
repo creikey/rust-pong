@@ -4,6 +4,7 @@ use raylib::prelude::*;
 
 use std::io;
 use std::io::{Read, Write};
+use std::mem::size_of;
 use std::net::TcpStream;
 
 pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
@@ -14,6 +15,7 @@ pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
     ball_size: 20.0,
     ball_speed: 400.0,
     score_font_size: 80,
+    dt: 1.0 / 60.0,
 };
 
 fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
@@ -62,7 +64,9 @@ impl Paddle {
             self.velocity += friction_effect;
         }
         self.position.y += self.velocity * dt;
-        if self.position.y <= 0.0 || self.position.y + GAME_CONFIG.paddle_size.y >= GAME_CONFIG.arena_size.y {
+        if self.position.y <= 0.0
+            || self.position.y + GAME_CONFIG.paddle_size.y >= GAME_CONFIG.arena_size.y
+        {
             self.velocity *= -1.0;
         }
     }
@@ -93,10 +97,10 @@ struct Ball {
 }
 
 impl Ball {
-    fn new() -> Ball {
+    fn new(horizontal_multiplier: f32) -> Ball {
         let mut to_return = Ball {
             position: Vector2::new(0.0, 0.0),
-            movement: Vector2::new(1.0, 0.0),
+            movement: Vector2::new(1.0 * horizontal_multiplier, 0.0),
             increased_speed: 0.0,
         };
         to_return.reset();
@@ -177,6 +181,33 @@ impl Score {
     }
 }
 
+#[repr(C)]
+pub struct PongInputState {
+    frame: i32,
+    input: f32,
+}
+
+impl PongInputState {
+    fn new() -> Self {
+        PongInputState {
+            frame: 0,
+            input: 0.0,
+        }
+    }
+
+    // To ensure byte alignment, you should probably
+    // call this like PongInputState::new().into_u8()
+    pub fn into_u8(self) -> [u8; size_of::<Self>()] {
+        unsafe { std::mem::transmute(self) }
+    }
+
+    // caution: this method may only be called on u8 slices that are slices of memory that is PongInputState
+    // or at least PongInputState byte aligned.
+    pub unsafe fn from_u8(b: [u8; size_of::<Self>()]) -> Self {
+        std::mem::transmute(b)
+    }
+}
+
 pub struct PongGameConfig {
     pub arena_size: Vector2,
     paddle_size: Vector2,
@@ -185,6 +216,7 @@ pub struct PongGameConfig {
     ball_size: f32,
     ball_speed: f32,
     score_font_size: i32,
+    dt: f32,
 }
 
 pub struct PongGame {
@@ -194,19 +226,31 @@ pub struct PongGame {
     left_score: Score,
     right_score: Score,
     opponent_stream: TcpStream,
+    playing_on_left_side: bool,
 }
 
 impl PongGame {
-    pub fn new(opponent_stream: TcpStream) -> PongGame {
+    // is_host: the host serves the ball first
+    pub fn new(opponent_stream: TcpStream, is_host: bool) -> PongGame {
         opponent_stream.set_nonblocking(true).unwrap();
         PongGame {
             left_paddle: Paddle::new(true),
             right_paddle: Paddle::new(false),
-            ball: Ball::new(),
+            ball: Ball::new(1.0),
             left_score: Score::new(true),
             right_score: Score::new(false),
+            playing_on_left_side: is_host,
             opponent_stream: opponent_stream,
         }
+    }
+
+    fn process_input(&mut self, i: &PongInputState, is_on_left_side: bool) {
+        (if is_on_left_side {
+            &mut self.left_paddle
+        } else {
+            &mut self.right_paddle
+        })
+        .process_movement(i.input, GAME_CONFIG.dt);
     }
 }
 
@@ -219,33 +263,36 @@ impl Scene for PongGame {
         self.left_score.draw(d);
         self.right_score.draw(d);
     }
+
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
-        let mut data = [0];
-        match self.opponent_stream.read_exact(&mut data) {
-            Ok(_) => {
-                println!("Received byte: {}", data[0]);
-            }
-            Err(e) => {
-                match e.kind() {
+        let cur_input_state = PongInputState {
+            frame: 0,
+            input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
+        };
+
+        {
+            let mut data = PongInputState::new().into_u8();
+            match self.opponent_stream.read_exact(&mut data) {
+                Ok(_) => {
+                    // println!("Received input state, processing input...");
+                    self.process_input(unsafe { &PongInputState::from_u8(data) }, !self.playing_on_left_side);
+                }
+                Err(e) => match e.kind() {
                     io::ErrorKind::WouldBlock => {}
                     _ => {
                         println!("Failed to receive data from server: {}", e);
                     }
-                }
+                },
             }
         }
-        println!("Sending byte 7...");
-        self.opponent_stream.write(& [7]).unwrap();
+        self.process_input(&cur_input_state, self.playing_on_left_side);
 
-        let dt = rl.get_frame_time();
-        self.left_paddle.process_movement(
-            dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
-            dt,
-        );
-        self.right_paddle.process_movement(
-            dimension_strength(&rl, KeyboardKey::KEY_K, KeyboardKey::KEY_I),
-            dt,
-        );
+        // println!("Sending my input...");
+        self.opponent_stream
+            .write(&cur_input_state.into_u8())
+            .unwrap();
+
+        let dt = GAME_CONFIG.dt;
         self.ball
             .process_movement(dt, &self.left_paddle, &self.right_paddle);
         if self.ball.position.x <= -GAME_CONFIG.ball_size {

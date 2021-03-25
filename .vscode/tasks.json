@@ -16,7 +16,7 @@
 			"command": "run",
 			"dependsOn": "build rust project",
 			"windows": {
-				"command": ".\\target\\debug\\rust-pong.exe"
+				"command": ".\\target\\debug\\game.exe"
 			}
 		}
 	]

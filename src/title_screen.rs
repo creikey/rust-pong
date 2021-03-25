@@ -114,7 +114,7 @@ impl Scene for TitleScreen {
 
                             if response == 200 {
                                 println!("Joined Lobby!");
-                                _s.new_scene = Some(Box::new(pong::PongGame::new(stream)));
+                                _s.new_scene = Some(Box::new(pong::PongGame::new(stream, false)));
                             } else {
                                 println!(
                                     "Error creating lobby, response from server: {}",
