@@ -34,6 +34,7 @@ fn dimension_strength(
     key_strength(rl, positive_key) - key_strength(rl, negative_key)
 }
 
+#[derive(PartialEq, Debug)]
 struct Paddle {
     position: Vector2,
     velocity: f32,
@@ -85,11 +86,12 @@ impl Paddle {
             && (local_ball_pos.y >= -GAME_CONFIG.ball_size
                 && local_ball_pos.y <= GAME_CONFIG.paddle_size.y + GAME_CONFIG.ball_size)
     }
-    fn draw(&mut self, d: &mut RaylibDrawHandle) {
+    fn draw(&self, d: &mut RaylibDrawHandle) {
         d.draw_rectangle_v(self.position, GAME_CONFIG.paddle_size, Color::BLACK);
     }
 }
 
+#[derive(PartialEq, Debug)]
 struct Ball {
     position: Vector2,
     movement: Vector2,
@@ -114,7 +116,7 @@ impl Ball {
         self.increased_speed = 0.0;
     }
 
-    fn draw(&mut self, d: &mut RaylibDrawHandle) {
+    fn draw(&self, d: &mut RaylibDrawHandle) {
         d.draw_circle_v(self.position, GAME_CONFIG.ball_size, Color::RED);
     }
 
@@ -149,6 +151,8 @@ impl Ball {
     }
 }
 
+
+#[derive(PartialEq, Debug)]
 struct Score {
     value: i32,
     left_side: bool,
@@ -162,7 +166,7 @@ impl Score {
         }
     }
 
-    fn draw(&mut self, d: &mut RaylibDrawHandle) {
+    fn draw(&self, d: &mut RaylibDrawHandle) {
         let score_string = self.value.to_string();
         let to_draw_middle_x;
         if self.left_side {
@@ -219,78 +223,38 @@ pub struct PongGameConfig {
     dt: f32,
 }
 
-pub struct PongGame {
+#[derive(PartialEq, Debug)]
+struct PongGameState {
     left_paddle: Paddle,
     right_paddle: Paddle,
     ball: Ball,
     left_score: Score,
     right_score: Score,
-    opponent_stream: TcpStream,
-    playing_on_left_side: bool,
 }
 
-impl PongGame {
-    // is_host: the host serves the ball first
-    pub fn new(opponent_stream: TcpStream, is_host: bool) -> PongGame {
-        opponent_stream.set_nonblocking(true).unwrap();
-        PongGame {
+impl PongGameState {
+    fn new() -> PongGameState {
+        PongGameState {
             left_paddle: Paddle::new(true),
             right_paddle: Paddle::new(false),
             ball: Ball::new(1.0),
             left_score: Score::new(true),
             right_score: Score::new(false),
-            playing_on_left_side: is_host,
-            opponent_stream: opponent_stream,
         }
     }
 
-    fn process_input(&mut self, i: &PongInputState, is_on_left_side: bool) {
+    fn process_paddle_input(&mut self, i: f32, is_on_left_side: bool) {
         (if is_on_left_side {
             &mut self.left_paddle
         } else {
             &mut self.right_paddle
         })
-        .process_movement(i.input, GAME_CONFIG.dt);
-    }
-}
-
-impl Scene for PongGame {
-    fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle) {
-        d.clear_background(Color::WHITE);
-        self.left_paddle.draw(d);
-        self.right_paddle.draw(d);
-        self.ball.draw(d);
-        self.left_score.draw(d);
-        self.right_score.draw(d);
+        .process_movement(i, GAME_CONFIG.dt);
     }
 
-    fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
-        let cur_input_state = PongInputState {
-            frame: 0,
-            input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
-        };
-
-        {
-            let mut data = PongInputState::new().into_u8();
-            match self.opponent_stream.read_exact(&mut data) {
-                Ok(_) => {
-                    // println!("Received input state, processing input...");
-                    self.process_input(unsafe { &PongInputState::from_u8(data) }, !self.playing_on_left_side);
-                }
-                Err(e) => match e.kind() {
-                    io::ErrorKind::WouldBlock => {}
-                    _ => {
-                        println!("Failed to receive data from server: {}", e);
-                    }
-                },
-            }
-        }
-        self.process_input(&cur_input_state, self.playing_on_left_side);
-
-        // println!("Sending my input...");
-        self.opponent_stream
-            .write(&cur_input_state.into_u8())
-            .unwrap();
+    fn process_logic(&mut self, left: f32, right: f32) {
+        self.process_paddle_input(left, true);
+        self.process_paddle_input(right, false);
 
         let dt = GAME_CONFIG.dt;
         self.ball
@@ -304,7 +268,111 @@ impl Scene for PongGame {
             self.ball.reset();
         }
     }
+
+    fn draw(&self, d: &mut RaylibDrawHandle) {
+        self.left_paddle.draw(d);
+        self.right_paddle.draw(d);
+        self.ball.draw(d);
+        self.left_score.draw(d);
+        self.right_score.draw(d);
+    }
+}
+
+pub struct PongGame {
+    cur_state: PongGameState,
+    opponent_stream: TcpStream,
+    playing_on_left_side: bool,
+}
+
+impl PongGame {
+    // is_host: the host serves the ball first
+    pub fn new(opponent_stream: TcpStream, is_host: bool) -> PongGame {
+        opponent_stream.set_nonblocking(true).unwrap();
+        PongGame {
+            cur_state: PongGameState::new(),
+            playing_on_left_side: is_host,
+            opponent_stream: opponent_stream,
+        }
+    }
+}
+
+impl Scene for PongGame {
+    fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle) {
+        d.clear_background(Color::WHITE);
+        self.cur_state.draw(d);
+    }
+
+    fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
+        // construct local input
+        let local_input = PongInputState {
+            frame: 0,
+            input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
+        };
+
+        // attempt to fetch remote input
+        let mut remote_input_data = PongInputState::new().into_u8();
+        let mut remote_input: Option<PongInputState> = None;
+        match self.opponent_stream.read_exact(&mut remote_input_data) {
+            Ok(_) => {
+                // println!("Received input state, processing input...");
+                remote_input = Some(unsafe { PongInputState::from_u8(remote_input_data) });
+            }
+            Err(e) => match e.kind() {
+                io::ErrorKind::WouldBlock => {}
+                _ => {
+                    println!("Failed to receive data from server: {}", e);
+                }
+            },
+        }
+
+        // depending on if I'm right or left, send local input to the correct variable
+        let zero_state = &PongInputState::new(); // TODO use rollback to properly duplicate the remote input if there is none
+        let left_input: &PongInputState;
+        let right_input: &PongInputState;
+        if self.playing_on_left_side {
+            left_input = &local_input;
+            right_input = remote_input.as_ref().unwrap_or(zero_state);
+        } else {
+            right_input = &local_input;
+            left_input = remote_input.as_ref().unwrap_or(zero_state);
+        }
+
+        // process the game given optional input from both sides
+        self.cur_state.process_logic(left_input.input, right_input.input);
+
+        // println!("Sending my input...");
+        self.opponent_stream.write(&local_input.into_u8()).unwrap();
+    }
     fn should_quit(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deterministic() {
+        let mut states: [PongGameState; 7] = [
+            PongGameState::new(),
+            PongGameState::new(),
+            PongGameState::new(),
+            PongGameState::new(),
+            PongGameState::new(),
+            PongGameState::new(),
+            PongGameState::new(),
+        ];
+
+        for s in states.iter_mut() {
+            for frame in 0..5000 {
+                let elapsed_time = (frame as f32) * GAME_CONFIG.dt;
+                s.process_logic(elapsed_time.sin(), elapsed_time.cos());
+            }
+        }
+
+        for s in states.iter().skip(1) {
+            assert_eq!(&states[0], s);
+        }
     }
 }
