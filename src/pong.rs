@@ -6,6 +6,7 @@ use std::io;
 use std::io::{Read, Write};
 use std::mem::size_of;
 use std::net::TcpStream;
+use std::vec::Vec;
 
 pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
     arena_size: Vector2::new(1000.0, 800.0),
@@ -15,8 +16,21 @@ pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
     ball_size: 20.0,
     ball_speed: 400.0,
     score_font_size: 80,
+    max_rollback_frames: 32,
     dt: 1.0 / 60.0,
 };
+
+pub struct PongGameConfig {
+    pub arena_size: Vector2,
+    paddle_size: Vector2,
+    paddle_force: f32,
+    paddle_friction: f32,
+    ball_size: f32,
+    ball_speed: f32,
+    score_font_size: i32,
+    max_rollback_frames: usize, // must be a power of 2 for RingBuffer
+    dt: f32,
+}
 
 fn key_strength(rl: &RaylibHandle, key: KeyboardKey) -> f32 {
     if rl.is_key_down(key) {
@@ -34,7 +48,7 @@ fn dimension_strength(
     key_strength(rl, positive_key) - key_strength(rl, negative_key)
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 struct Paddle {
     position: Vector2,
     velocity: f32,
@@ -91,7 +105,7 @@ impl Paddle {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 struct Ball {
     position: Vector2,
     movement: Vector2,
@@ -151,8 +165,7 @@ impl Ball {
     }
 }
 
-
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 struct Score {
     value: i32,
     left_side: bool,
@@ -186,10 +199,11 @@ impl Score {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct PongInputState {
     // Warning: For network security, there should be no byte padding inserted. This would cause
     // unitialized memory to be transmitted over the network: BAD IDEA - Ben Aubin
-    frame: i32,
+    frame: u32,
     input: f32,
 }
 
@@ -214,18 +228,7 @@ impl PongInputState {
     }
 }
 
-pub struct PongGameConfig {
-    pub arena_size: Vector2,
-    paddle_size: Vector2,
-    paddle_force: f32,
-    paddle_friction: f32,
-    ball_size: f32,
-    ball_speed: f32,
-    score_font_size: i32,
-    dt: f32,
-}
-
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 struct PongGameState {
     left_paddle: Paddle,
     right_paddle: Paddle,
@@ -280,8 +283,15 @@ impl PongGameState {
     }
 }
 
+struct PongInputAndGameState {
+    left: PongInputState,
+    right: PongInputState,
+    game_after_inputs: PongGameState,
+}
+
 pub struct PongGame {
-    cur_state: PongGameState,
+    cur_frame: u32,
+    last_frames: Vec<PongInputAndGameState>,
     opponent_stream: TcpStream,
     playing_on_left_side: bool,
 }
@@ -291,7 +301,8 @@ impl PongGame {
     pub fn new(opponent_stream: TcpStream, is_host: bool) -> PongGame {
         opponent_stream.set_nonblocking(true).unwrap();
         PongGame {
-            cur_state: PongGameState::new(),
+            cur_frame: 0,
+            last_frames: Vec::new(),
             playing_on_left_side: is_host,
             opponent_stream: opponent_stream,
         }
@@ -301,13 +312,13 @@ impl PongGame {
 impl Scene for PongGame {
     fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle) {
         d.clear_background(Color::WHITE);
-        self.cur_state.draw(d);
+        self.last_frames[0].game_after_inputs.draw(d);
     }
 
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
         // construct local input from keys pressed
         let local_input = PongInputState {
-            frame: 0,
+            frame: self.cur_frame,
             input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
         };
 
@@ -327,22 +338,192 @@ impl Scene for PongGame {
             },
         }
 
+        // neither of these should need to be option, as by the end of the rollback logic
+        // and stuff both should definitely be set, but the rust compiler can't figure that
+        // out for me, so here we are
+        let mut this_frames_left_input: Option<PongInputState> = None;
+        let mut this_frames_right_input: Option<PongInputState> = None;
+
+        // rollback and input duplication logic
+        match remote_input {
+            Some(remote_input) => {
+                let frame_offset = self.cur_frame - remote_input.frame;
+                if frame_offset == 0 {
+                    // remote input just happened
+                    if self.playing_on_left_side {
+                        this_frames_right_input = Some(remote_input);
+                    } else {
+                        this_frames_left_input = Some(remote_input);
+                    }
+                } else if frame_offset > 0 {
+                    // remote input happened frame_offset frames in the past
+
+                    // rollback to the gamestate that many frames ago
+                    let mut cur_game_state_index: i32 = (frame_offset - 1) as i32; // it's not zero, and zero was the last frame's game state
+
+                    // set the input of that frame to what was received
+                    let mut must_rollback = false;
+                    if self.playing_on_left_side {
+                        if self.last_frames[cur_game_state_index as usize].right != remote_input {
+                            self.last_frames[cur_game_state_index as usize].right = remote_input;
+                            must_rollback = true;
+                        }
+                    } else {
+                        if self.last_frames[cur_game_state_index as usize].left != remote_input {
+                            self.last_frames[cur_game_state_index as usize].left = remote_input;
+                            must_rollback = true;
+                        }
+                    }
+
+                    // resimulate all the frames that I rolled back, if the input was different
+                    while must_rollback && cur_game_state_index >= 0 {
+                        // rewind the game state to the previous frame's game state
+                        // TODO this code is very similar to what is necessarily done every frame,
+                        // should be put into its own function as well
+                        let previous_game_state: PongGameState;
+                        if ((cur_game_state_index + 1) as usize) >= self.last_frames.len() {
+                            // in this case, there is no frame before the last frame of inputs,
+                            // so resetting to the frame before the current frame means rewinding
+                            // to before the game started, so create a struct that was the game state
+                            // when the game state started
+                            // TODO when there are save games implemented I think that the save game
+                            // would go here
+                            previous_game_state = PongGameState::new();
+                        } else {
+                            previous_game_state = self.last_frames
+                                [(cur_game_state_index + 1) as usize]
+                                .game_after_inputs
+                                .clone();
+                        }
+                        self.last_frames[cur_game_state_index as usize].game_after_inputs =
+                            previous_game_state;
+
+                        // resimulate the current frame with its updated inputs
+                        let cur_frame: &mut PongInputAndGameState =
+                            &mut self.last_frames[cur_game_state_index as usize];
+                        cur_frame
+                            .game_after_inputs
+                            .process_logic(cur_frame.left.input, cur_frame.right.input);
+
+                        cur_game_state_index -= 1;
+                    }
+
+                    // TODO this input duplicating code is copy pasted from the None branch,
+                    // should probably be in a function
+                    if self.playing_on_left_side {
+                        this_frames_right_input = Some(if self.last_frames.len() == 0 {
+                            PongInputState::new()
+                        } else {
+                            self.last_frames[0].right
+                        });
+                    } else {
+                        this_frames_left_input = Some(if self.last_frames.len() == 0 {
+                            PongInputState::new()
+                        } else {
+                            self.last_frames[0].left
+                        });
+                    }
+                }
+            }
+            None => {
+                // no remote input received, copy the last input for the appropriate remote player.
+                // if there was no last input, use the zero input
+                if self.playing_on_left_side {
+                    this_frames_right_input = Some(if self.last_frames.len() == 0 {
+                        PongInputState::new()
+                    } else {
+                        self.last_frames[0].right
+                    });
+                } else {
+                    this_frames_left_input = Some(if self.last_frames.len() == 0 {
+                        PongInputState::new()
+                    } else {
+                        self.last_frames[0].left
+                    });
+                }
+            }
+        }
+
+        let previous_game_state: PongGameState;
+        if self.last_frames.len() == 0 {
+            // in this case, there is no frame before the last frame of inputs,
+            // so resetting to the frame before the current frame means rewinding
+            // to before the game started, so create a struct that was the game state
+            // when the game state started
+            // TODO when there are save games implemented I think that the save game
+            // would go here
+            previous_game_state = PongGameState::new();
+        } else {
+            previous_game_state = self.last_frames[0].game_after_inputs.clone();
+        }
+
+        let mut new_game_state: PongGameState = previous_game_state.clone();
+        if self.playing_on_left_side {
+            this_frames_left_input = Some(local_input);
+        } else {
+            this_frames_right_input = Some(local_input);
+        }
+
+        new_game_state.process_logic(
+            this_frames_left_input.unwrap().input,
+            this_frames_right_input.unwrap().input,
+        );
+
+        // push remote input into proper slot of rollback queue, if it's not there duplicate
+        // the input before it
+        /*let this_frame_remote_input;
+        match remote_input {
+            Some(r) => {
+                let frame_offset = self.cur_frame - r.frame; // frames ago from when the input happened
+                if frame_offset == 0 {
+                    // input just happened!
+                    this_frame_remote_input = r;
+                } else if frame_offset > 0 { // input happened frame_offset frames ago...
+                }
+            }
+            None => {
+                // no remote input received this frame....
+                match self.recorded_input_frames[-1] {
+                    // see if I have input from the past to duplicate
+                    Some(last_input_state) => {
+                        // I do! Duplicate the last remote input
+                        if self.playing_on_left_side {
+                            this_frame_remote_input = last_input_state.right;
+                        } else {
+                            this_frame_remote_input = last_input_state.left;
+                        }
+                    }
+                    // I don't, just use zero input
+                    None => this_frame_remote_input = PongInputState::new(),
+                }
+            }
+        };
+
         // depending on if I'm right or left, send local and remote input to the correct variable
         let zero_state = &PongInputState::new(); // TODO use rollback to properly duplicate the remote input if there is none
         let left_input: &PongInputState;
         let right_input: &PongInputState;
         if self.playing_on_left_side {
             left_input = &local_input;
-            right_input = remote_input.as_ref().unwrap_or(zero_state);
+            right_input = &this_frame_remote_input;
         } else {
             right_input = &local_input;
-            left_input = remote_input.as_ref().unwrap_or(zero_state);
+            left_input = &this_frame_remote_input;
         }
 
-        self.cur_state.process_logic(left_input.input, right_input.input);
+        self.cur_state
+            .process_logic(left_input.input, right_input.input);*/
 
         // println!("Sending my input...");
         self.opponent_stream.write(&local_input.into_u8()).unwrap();
+
+        self.last_frames.insert(0, PongInputAndGameState {
+            left: this_frames_left_input.unwrap(),
+            right: this_frames_right_input.unwrap(),
+            game_after_inputs: new_game_state,
+        });
+
+        self.cur_frame += 1;
     }
     fn should_quit(&self) -> bool {
         false
