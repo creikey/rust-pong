@@ -2,12 +2,12 @@ use rand;
 use std::collections::HashMap;
 use std::io;
 use std::io::{Read, Write};
+use std::mem::size_of;
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
-use std::mem::size_of;
 
 use rust_pong::pong::PongInputState;
 
@@ -131,7 +131,7 @@ fn handle_client(
         other_stream.set_nonblocking(true).unwrap();
 
         println!("Funneling packets between two clients in loop...");
-        let mut e = Ok(());
+        let mut e;
         loop {
             // TODO this only funnels one byte per millisecond, terrible. Should be polling in the funnel_packets function
             // until there are no more bytes in the stream, maybe buffer of 256 and fill as much of it as possible?
