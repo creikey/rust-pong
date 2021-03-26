@@ -187,6 +187,8 @@ impl Score {
 
 #[repr(C)]
 pub struct PongInputState {
+    // Warning: For network security, there should be no byte padding inserted. This would cause
+    // unitialized memory to be transmitted over the network: BAD IDEA - Ben Aubin
     frame: i32,
     input: f32,
 }
@@ -285,7 +287,7 @@ pub struct PongGame {
 }
 
 impl PongGame {
-    // is_host: the host serves the ball first
+    // is_host: the host is the left paddle, joiner is the right
     pub fn new(opponent_stream: TcpStream, is_host: bool) -> PongGame {
         opponent_stream.set_nonblocking(true).unwrap();
         PongGame {
@@ -303,7 +305,7 @@ impl Scene for PongGame {
     }
 
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
-        // construct local input
+        // construct local input from keys pressed
         let local_input = PongInputState {
             frame: 0,
             input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
@@ -325,7 +327,7 @@ impl Scene for PongGame {
             },
         }
 
-        // depending on if I'm right or left, send local input to the correct variable
+        // depending on if I'm right or left, send local and remote input to the correct variable
         let zero_state = &PongInputState::new(); // TODO use rollback to properly duplicate the remote input if there is none
         let left_input: &PongInputState;
         let right_input: &PongInputState;
@@ -337,7 +339,6 @@ impl Scene for PongGame {
             left_input = remote_input.as_ref().unwrap_or(zero_state);
         }
 
-        // process the game given optional input from both sides
         self.cur_state.process_logic(left_input.input, right_input.input);
 
         // println!("Sending my input...");
