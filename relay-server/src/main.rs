@@ -18,24 +18,29 @@ fn funnel_packets(
 ) -> Result<(), io::Error> {
     let mut buffer = [0u8; size_of::<PongInputState>()];
 
-    match source_stream.read_exact(&mut buffer) {
-        Ok(_) => {
-            target_stream.write(&buffer).unwrap(); // TODO fix unclean error here where connection is forcibly closed
-            Ok(())
-        }
-        Err(e) => match e.kind() {
-            io::ErrorKind::WouldBlock => Ok(()),
-            _ => {
-                println!(
-                    "While funnneling packets from hoster -> joiner, an error occured: {}",
-                    e
-                );
-                source_stream.shutdown(Shutdown::Both).unwrap();
-
-                Err(e)
+    let mut to_return = Ok(());
+    loop {
+        match source_stream.read_exact(&mut buffer) {
+            Ok(_) => {
+                target_stream.write(&buffer).unwrap(); // TODO fix unclean error here where connection is forcibly closed
+             
             }
-        },
+            Err(e) => match e.kind() {
+                io::ErrorKind::WouldBlock => break, // no more packets to funnel this way
+                _ => {
+                    println!(
+                        "While funnneling packets from hoster -> joiner, an error occured: {}",
+                        e
+                    );
+                    source_stream.shutdown(Shutdown::Both).unwrap();
+                    to_return = Err(e);
+                    break;
+                }
+            },
+        }
     }
+    
+    to_return
 }
 
 fn handle_client(
@@ -134,8 +139,6 @@ fn handle_client(
         println!("Funneling packets between two clients in loop...");
         let mut e;
         loop {
-            // TODO this only funnels one byte per millisecond, terrible. Should be polling in the funnel_packets function
-            // until there are no more bytes in the stream, maybe buffer of 256 and fill as much of it as possible?
             e = funnel_packets(&mut stream, &mut other_stream);
             if e.is_err() {
                 break;
