@@ -31,7 +31,12 @@ impl Rectangle {
     }
 }*/
 
-pub fn button(d: &mut RaylibDrawHandle, upper_left_corner: Vector2, size: Vector2, text: &str) -> bool {
+pub fn button(
+    d: &mut RaylibDrawHandle,
+    upper_left_corner: Vector2,
+    size: Vector2,
+    text: &str,
+) -> bool {
     let font_size = 50.0;
     let bounding_box = rect_new_ex(upper_left_corner, size);
     let hovered = bounding_box.check_collision_point_rec(d.get_mouse_position());

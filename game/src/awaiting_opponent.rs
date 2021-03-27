@@ -5,8 +5,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 
 use crate::imui::*;
-use crate::scene::*;
 use crate::pong;
+use crate::scene::*;
 
 pub struct AwaitingOpponent {
     pub lobby_stream: TcpStream,
@@ -35,20 +35,18 @@ impl Scene for AwaitingOpponent {
 
                     _s.new_scene = Some(Box::new(pong::PongGame::new(
                         self.lobby_stream.try_clone().unwrap(),
-                        true
+                        true,
                     )));
                 } else {
                     println!("Wonky thing received from server: {}", receive_buffer[0]);
                 }
             }
-            Err(e) => {
-                match e.kind() {
-                    io::ErrorKind::WouldBlock => {}
-                    _ => {
-                        println!("Failed to receive data from server: {}", e);
-                    }
+            Err(e) => match e.kind() {
+                io::ErrorKind::WouldBlock => {}
+                _ => {
+                    println!("Failed to receive data from server: {}", e);
                 }
-            }
+            },
         }
         match &self.text_to_copy_to_clipboard {
             Some(text) => {

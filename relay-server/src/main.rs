@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 
-use rust_pong::pong::PongInputState;
+use common::PongInputState;
+use common::PORT;
 
 fn funnel_packets(
     source_stream: &mut TcpStream,
@@ -157,9 +158,9 @@ fn main() {
     let lobby_to_host_transmitter: Arc<Mutex<HashMap<i32, mpsc::Sender<TcpStream>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    let listener = TcpListener::bind("0.0.0.0:52337").unwrap();
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", PORT)).unwrap();
     // accept connections and process them, spawning a new thread for each one
-    println!("Server listening on port 3333");
+    println!("Server listening on port {}", PORT);
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {

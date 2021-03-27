@@ -4,9 +4,10 @@ use raylib::prelude::*;
 
 use std::io;
 use std::io::{Read, Write};
-use std::mem::size_of;
 use std::net::TcpStream;
 use std::vec::Vec;
+
+use common::PongInputState;
 
 pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
     arena_size: Vector2::new(1000.0, 800.0),
@@ -195,44 +196,6 @@ impl Score {
             GAME_CONFIG.score_font_size,
             Color::BLACK,
         );
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq)]
-pub struct PongInputState {
-    // Warning: For network security, there should be no byte padding inserted. This would cause
-    // unitialized memory to be transmitted over the network: BAD IDEA - Ben Aubin
-    frame: u32,
-    input: f32,
-}
-
-impl PongInputState {
-    fn new() -> Self {
-        PongInputState {
-            frame: 0,
-            input: 0.0,
-        }
-    }
-
-    // for unit tests
-    fn from_input(input: f32) -> Self {
-        PongInputState {
-            frame: 0,
-            input: input,
-        }
-    }
-
-    // To ensure byte alignment, you should probably
-    // call this like PongInputState::new().into_u8()
-    pub fn into_u8(self) -> [u8; size_of::<Self>()] {
-        unsafe { std::mem::transmute(self) }
-    }
-
-    // caution: this method may only be called on u8 slices that are slices of memory that is PongInputState
-    // or at least PongInputState byte aligned.
-    pub unsafe fn from_u8(b: [u8; size_of::<Self>()]) -> Self {
-        std::mem::transmute(b)
     }
 }
 

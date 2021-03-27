@@ -22,10 +22,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+
+[[package]]
 name = "fs_extra"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2022715d62ab30faffd124d40b76f4134a550a87792276512b18d63272333394"
+
+[[package]]
+name = "game"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "raylib",
+]
 
 [[package]]
 name = "getrandom"
@@ -46,9 +58,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.88"
+version = "0.2.91"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03b07a082330a35e43f63177cc01689da34fbffa0105e1246cf0311472cac73a"
+checksum = "8916b1f6ca17130ec6568feccee27c156ad12037880833a3b842a823236502e7"
 
 [[package]]
 name = "ppv-lite86"
@@ -119,11 +131,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-pong"
+name = "relay-server"
 version = "0.1.0"
 dependencies = [
+ "common",
  "rand",
- "raylib",
 ]
 
 [[package]]

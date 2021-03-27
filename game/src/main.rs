@@ -1,10 +1,20 @@
-use rust_pong::scene::*;
-use rust_pong::pong;
-use rust_pong::title_screen;
+// scenes - these effectively act as separate games
+pub mod awaiting_opponent;
+pub mod pong; // pong game logic, ui, and rollback networking
+pub mod title_screen; // title screen buttons and scene switching logic // screen that polls the server waiting for an opponent to join
+
+// utility functions - these are more like libraries
+pub mod imui;
+pub mod scene; // scene API and scene struct/trait // immediate mode ui
+
+use scene::*;
 
 fn main() {
     let (mut rl, thread) = raylib::init()
-        .size(pong::GAME_CONFIG.arena_size.x as i32, pong::GAME_CONFIG.arena_size.y as i32)
+        .size(
+            pong::GAME_CONFIG.arena_size.x as i32,
+            pong::GAME_CONFIG.arena_size.y as i32,
+        )
         .title("Rust Pong")
         .build();
 

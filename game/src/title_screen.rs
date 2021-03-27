@@ -3,10 +3,12 @@ use raylib::prelude::*;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use crate::imui::*;
-use crate::scene::*;
 use crate::awaiting_opponent;
+use crate::imui::*;
 use crate::pong;
+use crate::scene::*;
+
+use common::{DEVEL_IP, PROD_IP};
 
 pub struct TitleScreen {
     should_quit: bool,
@@ -36,9 +38,9 @@ impl Scene for TitleScreen {
         let ip_to_connect_to;
         if self.production_url {
             d.draw_text("PRODUCTION URL", 0, 0, 16, Color::RED);
-            ip_to_connect_to = "0.0.0.0:52337";
+            ip_to_connect_to = PROD_IP;
         } else {
-            ip_to_connect_to = "143.198.74.108:52337";
+            ip_to_connect_to = DEVEL_IP;
         }
 
         let screen_size = Vector2::new(d.get_screen_width() as f32, d.get_screen_height() as f32);
@@ -64,6 +66,7 @@ impl Scene for TitleScreen {
         let mut cur_place_pos = screen_size / 2.0 - set_of_buttons_size / 2.0;
 
         if button(d, cur_place_pos, button_size, "HOST") {
+            println!("Connecting to {}", ip_to_connect_to);
             match TcpStream::connect(ip_to_connect_to) {
                 Ok(mut stream) => {
                     println!("Successfully connected to server in port 3333");
