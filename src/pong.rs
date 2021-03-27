@@ -345,9 +345,6 @@ impl Scene for PongGame {
             },
         }
 
-        // neither of these should need to be option, as by the end of the rollback logic
-        // and stuff both should definitely be set, but the rust compiler can't figure that
-        // out for me, so here we are
         let mut cur_frame_inputs: [PongInputState; 2] =
             [PongInputState::new(), PongInputState::new()];
 
@@ -386,8 +383,6 @@ impl Scene for PongGame {
                     // resimulate all the frames that I rolled back, if the input was different
                     while must_rollback && cur_game_state_index >= 0 {
                         // rewind the game state to the previous frame's game state
-                        // TODO this code is very similar to what is necessarily done every frame,
-                        // should be put into its own function as well
                         let previous_game_state: PongGameState;
                         if ((cur_game_state_index + 1) as usize) >= self.last_frames.len() {
                             // in this case, there is no frame before the last frame of inputs,
@@ -435,6 +430,8 @@ impl Scene for PongGame {
         }
 
         let previous_game_state: PongGameState;
+        // This code should be put into a function or something like that,
+        // it's used in the rollback section as well
         if self.last_frames.len() == 0 {
             // in this case, there is no frame before the last frame of inputs,
             // so resetting to the frame before the current frame means rewinding
