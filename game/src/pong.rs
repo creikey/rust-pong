@@ -371,12 +371,14 @@ impl Scene for PongGame {
                     // input arrived from the future?? I think this means that I'm running behind, so
                     // TODO use this offset to figure out how much of the current frame to skip maybe
                     self.future_inputs.push(remote_input);
+                    rl.set_target_fps(61);
                     continue;
                 }
                 let frame_offset = self.cur_frame - remote_input.frame;
                 if frame_offset == 0 {
                     // remote input just happened
                     cur_frame_inputs[remote_player_index] = Some(remote_input);
+                    rl.set_target_fps(60);
                 } else if frame_offset > 0 {
                     // remote input happened frame_offset frames in the past
 
@@ -386,6 +388,10 @@ impl Scene for PongGame {
                     // assert that the frame did not happen too far in the past
                     // TODO do something like pause the game until everything can be resynced in case this happens
                     assert!((cur_game_state_index as usize) < self.last_frames.len());
+
+                    if frame_offset > 1 {
+                        rl.set_target_fps(59);
+                    }
 
                     self.oldest_frame_delay = self.oldest_frame_delay.max(frame_offset);
 
