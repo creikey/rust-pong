@@ -17,7 +17,7 @@ pub const GAME_CONFIG: PongGameConfig = PongGameConfig {
     ball_size: 20.0,
     ball_speed: 400.0,
     score_font_size: 80,
-    max_rollback_frames: 32,
+    max_rollback_frames: 128,
     dt: 1.0 / 60.0,
 };
 
@@ -390,6 +390,8 @@ impl Scene for PongGame {
                     assert!((cur_game_state_index as usize) < self.last_frames.len());
 
                     if frame_offset > 1 {
+                        // TODO see how many frames of latency should be expected with occasional ping test
+                        // or something then only slow down if there's more frames of latency than expected from the network
                         rl.set_target_fps(59);
                     }
 
