@@ -263,11 +263,13 @@ pub struct PongGame {
     cur_frame: u32,
     // TODO choose a different datastructure for this that does not have O(n) insert time...
     last_frames: Vec<PongInputAndGameState>, // This vector should always be guaranteed to have something in it, the initial state of the game
+    future_inputs: Vec<PongInputState>,
     opponent_stream: TcpStream,
     playing_on_left_side: bool,
 
     // debug info
     frames_rolled_back: u32,
+    oldest_frame_delay: u32,
 }
 
 impl PongGame {
@@ -280,9 +282,11 @@ impl PongGame {
                 player_inputs: [PongInputState::new(), PongInputState::new()],
                 game_after_inputs: PongGameState::new(),
             }],
+            future_inputs: Vec::new(),
             playing_on_left_side: is_host,
             opponent_stream: opponent_stream,
             frames_rolled_back: 0,
+            oldest_frame_delay: 0,
         }
     }
 }
@@ -300,6 +304,16 @@ impl Scene for PongGame {
             12,
             Color::RED,
         );
+        d.draw_text(
+            &format!(
+                "OLDEST INPUT LATENCY: {} ms",
+                ((self.oldest_frame_delay as f32) * GAME_CONFIG.dt) * 1000.0
+            ),
+            0,
+            30,
+            12,
+            Color::RED,
+        );
     }
 
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
@@ -308,28 +322,33 @@ impl Scene for PongGame {
             frame: self.cur_frame,
             input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
         };
+        self.opponent_stream.write(&local_input.into_u8()).unwrap();
 
         // TODO continually check the opponent stream until there are no more input state
         // chunks to process
 
-        // attempt to fetch remote input
+        // fetch all input states available
         let mut remote_input_data = PongInputState::new().into_u8();
-        let mut remote_input: Option<PongInputState> = None;
-        match self.opponent_stream.read_exact(&mut remote_input_data) {
-            Ok(_) => {
-                // println!("Received input state, processing input...");
-                remote_input = Some(unsafe { PongInputState::from_u8(remote_input_data) });
-            }
-            Err(e) => match e.kind() {
-                io::ErrorKind::WouldBlock => {}
-                _ => {
-                    println!("Failed to receive data from server: {}", e);
+        let mut remote_inputs: Vec<PongInputState> = Vec::new();
+        loop {
+            match self.opponent_stream.read_exact(&mut remote_input_data) {
+                Ok(_) => {
+                    // println!("Received input state, processing input...");
+                    remote_inputs.push(unsafe { PongInputState::from_u8(remote_input_data) });
                 }
-            },
+                Err(e) => {
+                    match e.kind() {
+                        io::ErrorKind::WouldBlock => {}
+                        _ => {
+                            println!("Failed to receive data from server: {}", e);
+                        }
+                    }
+                    break;
+                }
+            }
         }
 
-        let mut cur_frame_inputs: [PongInputState; 2] =
-            [PongInputState::new(), PongInputState::new()];
+        let mut cur_frame_inputs: [Option<PongInputState>; 2] = [None, None];
 
         let remote_player_index: usize;
         let local_player_index: usize;
@@ -342,14 +361,22 @@ impl Scene for PongGame {
         }
 
         self.frames_rolled_back = 0; // updated to not zero if need to roll back
-        let mut must_duplicate_last_inputs: bool = false;
-        // rollback and input duplication logic
-        match remote_input {
-            Some(remote_input) => {
+        self.oldest_frame_delay = 0;
+        if remote_inputs.len() == 0 {
+            // no remote input received, copy the last input for the appropriate remote player.
+        } else {
+            // rollback and input duplication logic
+            for remote_input in remote_inputs {
+                if remote_input.frame > self.cur_frame {
+                    // input arrived from the future?? I think this means that I'm running behind, so
+                    // TODO use this offset to figure out how much of the current frame to skip maybe
+                    self.future_inputs.push(remote_input);
+                    continue;
+                }
                 let frame_offset = self.cur_frame - remote_input.frame;
                 if frame_offset == 0 {
                     // remote input just happened
-                    cur_frame_inputs[remote_player_index] = remote_input;
+                    cur_frame_inputs[remote_player_index] = Some(remote_input);
                 } else if frame_offset > 0 {
                     // remote input happened frame_offset frames in the past
 
@@ -360,15 +387,25 @@ impl Scene for PongGame {
                     // TODO do something like pause the game until everything can be resynced in case this happens
                     assert!((cur_game_state_index as usize) < self.last_frames.len());
 
+                    self.oldest_frame_delay = self.oldest_frame_delay.max(frame_offset);
+
                     // set the input of that frame to what was received
                     let must_rollback = self.last_frames[cur_game_state_index as usize]
                         .player_inputs[remote_player_index]
-                        != remote_input;
+                        .input
+                        != remote_input.input;
+
                     if must_rollback {
                         self.last_frames[cur_game_state_index as usize].player_inputs
                             [remote_player_index] = remote_input;
                         self.frames_rolled_back = frame_offset;
                     }
+
+                    // in the while loop, after I update the frame's inputs that the remote told me,
+                    // all the future frame's inputs are assumed to be duplicating the wrong frame.
+                    // TODO for UDP packets I think that because stuff can arrive out of order,
+                    // I need to be marking the frames that are duplicates of the previous one
+                    let mut copy_inputs = false;
 
                     // resimulate all the frames that I rolled back, if the input was different
                     while must_rollback && cur_game_state_index >= 0 {
@@ -382,6 +419,13 @@ impl Scene for PongGame {
                         self.last_frames[cur_game_state_index as usize].game_after_inputs =
                             previous_game_state;
 
+                        if copy_inputs {
+                            self.last_frames[cur_game_state_index as usize].player_inputs =
+                                self.last_frames[(cur_game_state_index + 1) as usize].player_inputs;
+                        }
+
+                        copy_inputs = true;
+
                         // resimulate the current frame with its updated inputs
                         let cur_frame: &mut PongInputAndGameState =
                             &mut self.last_frames[cur_game_state_index as usize];
@@ -391,29 +435,37 @@ impl Scene for PongGame {
 
                         cur_game_state_index -= 1;
                     }
-
-                    must_duplicate_last_inputs = true;
                 }
-            }
-            None => {
-                // no remote input received, copy the last input for the appropriate remote player.
-                must_duplicate_last_inputs = true;
             }
         }
 
-        if must_duplicate_last_inputs {
-            cur_frame_inputs[remote_player_index] =
-                self.last_frames[0].player_inputs[remote_player_index];
+        if cur_frame_inputs[remote_player_index].is_none() {
+            // check the future frame cache
+            let mut successfully_used_future_frame_cache = false;
+            if self.future_inputs.len() > 0 {
+                assert!(self.future_inputs[0].frame >= self.cur_frame); // assert that it's in the future or right now
+                if self.future_inputs[0].frame == self.cur_frame {
+                    cur_frame_inputs[remote_player_index] = Some(self.future_inputs.remove(0));
+                    successfully_used_future_frame_cache = true;
+                }
+            }
+
+            // duplicate the last frame
+            if !successfully_used_future_frame_cache {
+                cur_frame_inputs[remote_player_index] =
+                    Some(self.last_frames[0].player_inputs[remote_player_index]);
+            }
         }
 
         let mut new_game_state = self.last_frames[0].game_after_inputs.clone();
 
-        cur_frame_inputs[local_player_index] = local_input;
+        cur_frame_inputs[local_player_index] = Some(local_input);
+
+        let cur_frame_inputs = [cur_frame_inputs[0].unwrap(), cur_frame_inputs[1].unwrap()];
 
         new_game_state.process_logic(&cur_frame_inputs);
 
         // println!("Sending my input...");
-        self.opponent_stream.write(&local_input.into_u8()).unwrap();
 
         self.last_frames.insert(
             0,

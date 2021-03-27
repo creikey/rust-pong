@@ -5,7 +5,7 @@ pub const DEVEL_IP: &str = "localhost:5321";
 pub const PROD_IP: &str = "143.198.74.108:5321";
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct PongInputState {
     // Warning: For network security, there should be no byte padding inserted. This would cause
     // unitialized memory to be transmitted over the network: BAD IDEA - Ben Aubin
