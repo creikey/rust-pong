@@ -302,6 +302,9 @@ pub struct PongGame {
     last_frames: Vec<PongInputAndGameState>, // This vector should always be guaranteed to have something in it, the initial state of the game
     opponent_stream: TcpStream,
     playing_on_left_side: bool,
+
+    // debug info
+    frames_rolled_back: u32,
 }
 
 impl PongGame {
@@ -316,6 +319,7 @@ impl PongGame {
             }],
             playing_on_left_side: is_host,
             opponent_stream: opponent_stream,
+            frames_rolled_back: 0,
         }
     }
 }
@@ -324,6 +328,15 @@ impl Scene for PongGame {
     fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle) {
         d.clear_background(Color::WHITE);
         self.last_frames[0].game_after_inputs.draw(d);
+
+        // debug drawing
+        d.draw_text(
+            &format!("FRMS ROLLED BACK: {}", self.frames_rolled_back),
+            0,
+            0,
+            12,
+            Color::RED,
+        );
     }
 
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
@@ -364,6 +377,8 @@ impl Scene for PongGame {
             remote_player_index = 0;
             local_player_index = 1;
         }
+
+        self.frames_rolled_back = 0; // updated to not zero if need to roll back
         let mut must_duplicate_last_inputs: bool = false;
         // rollback and input duplication logic
         match remote_input {
@@ -389,6 +404,7 @@ impl Scene for PongGame {
                     if must_rollback {
                         self.last_frames[cur_game_state_index as usize].player_inputs
                             [remote_player_index] = remote_input;
+                        self.frames_rolled_back = frame_offset;
                     }
 
                     // resimulate all the frames that I rolled back, if the input was different
