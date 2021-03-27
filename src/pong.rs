@@ -298,7 +298,8 @@ struct PongInputAndGameState {
 
 pub struct PongGame {
     cur_frame: u32,
-    last_frames: Vec<PongInputAndGameState>,
+    // TODO choose a different datastructure for this that does not have O(n) insert time...
+    last_frames: Vec<PongInputAndGameState>, // This vector should always be guaranteed to have something in it, the initial state of the game
     opponent_stream: TcpStream,
     playing_on_left_side: bool,
 }
@@ -309,7 +310,10 @@ impl PongGame {
         opponent_stream.set_nonblocking(true).unwrap();
         PongGame {
             cur_frame: 0,
-            last_frames: Vec::new(),
+            last_frames: vec![PongInputAndGameState {
+                player_inputs: [PongInputState::new(), PongInputState::new()],
+                game_after_inputs: PongGameState::new(),
+            }],
             playing_on_left_side: is_host,
             opponent_stream: opponent_stream,
         }
@@ -328,6 +332,9 @@ impl Scene for PongGame {
             frame: self.cur_frame,
             input: dimension_strength(&rl, KeyboardKey::KEY_S, KeyboardKey::KEY_W),
         };
+
+        // TODO continually check the opponent stream until there are no more input state
+        // chunks to process
 
         // attempt to fetch remote input
         let mut remote_input_data = PongInputState::new().into_u8();
@@ -371,6 +378,10 @@ impl Scene for PongGame {
                     // rollback to the gamestate that many frames ago
                     let mut cur_game_state_index: i32 = (frame_offset - 1) as i32; // it's not zero, and zero was the last frame's game state
 
+                    // assert that the frame did not happen too far in the past
+                    // TODO do something like pause the game until everything can be resynced in case this happens
+                    assert!((cur_game_state_index as usize) < self.last_frames.len());
+
                     // set the input of that frame to what was received
                     let must_rollback = self.last_frames[cur_game_state_index as usize]
                         .player_inputs[remote_player_index]
@@ -384,20 +395,11 @@ impl Scene for PongGame {
                     while must_rollback && cur_game_state_index >= 0 {
                         // rewind the game state to the previous frame's game state
                         let previous_game_state: PongGameState;
-                        if ((cur_game_state_index + 1) as usize) >= self.last_frames.len() {
-                            // in this case, there is no frame before the last frame of inputs,
-                            // so resetting to the frame before the current frame means rewinding
-                            // to before the game started, so create a struct that was the game state
-                            // when the game state started
-                            // TODO when there are save games implemented I think that the save game
-                            // would go here
-                            previous_game_state = PongGameState::new();
-                        } else {
-                            previous_game_state = self.last_frames
-                                [(cur_game_state_index + 1) as usize]
-                                .game_after_inputs
-                                .clone();
-                        }
+                        assert!(((cur_game_state_index + 1) as usize) < self.last_frames.len());
+                        previous_game_state = self.last_frames[(cur_game_state_index + 1) as usize]
+                            .game_after_inputs
+                            .clone();
+
                         self.last_frames[cur_game_state_index as usize].game_after_inputs =
                             previous_game_state;
 
@@ -416,35 +418,16 @@ impl Scene for PongGame {
             }
             None => {
                 // no remote input received, copy the last input for the appropriate remote player.
-                // if there was no last input, use the zero input
                 must_duplicate_last_inputs = true;
             }
         }
 
         if must_duplicate_last_inputs {
-            cur_frame_inputs[remote_player_index] = if self.last_frames.len() == 0 {
-                PongInputState::new()
-            } else {
-                self.last_frames[0].player_inputs[remote_player_index]
-            };
+            cur_frame_inputs[remote_player_index] =
+                self.last_frames[0].player_inputs[remote_player_index];
         }
 
-        let previous_game_state: PongGameState;
-        // This code should be put into a function or something like that,
-        // it's used in the rollback section as well
-        if self.last_frames.len() == 0 {
-            // in this case, there is no frame before the last frame of inputs,
-            // so resetting to the frame before the current frame means rewinding
-            // to before the game started, so create a struct that was the game state
-            // when the game state started
-            // TODO when there are save games implemented I think that the save game
-            // would go here
-            previous_game_state = PongGameState::new();
-        } else {
-            previous_game_state = self.last_frames[0].game_after_inputs.clone();
-        }
-
-        let mut new_game_state: PongGameState = previous_game_state.clone();
+        let mut new_game_state = self.last_frames[0].game_after_inputs.clone();
 
         cur_frame_inputs[local_player_index] = local_input;
 
@@ -460,6 +443,10 @@ impl Scene for PongGame {
                 game_after_inputs: new_game_state,
             },
         );
+
+        if self.last_frames.len() > GAME_CONFIG.max_rollback_frames {
+            self.last_frames.pop();
+        }
 
         self.cur_frame += 1;
     }
