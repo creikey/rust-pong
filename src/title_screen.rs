@@ -11,6 +11,7 @@ use crate::pong;
 pub struct TitleScreen {
     should_quit: bool,
     failed_to_connect_to_lobby: bool,
+    production_url: bool,
 }
 
 impl TitleScreen {
@@ -18,14 +19,27 @@ impl TitleScreen {
         TitleScreen {
             should_quit: false,
             failed_to_connect_to_lobby: false,
+            production_url: false,
         }
     }
 }
 
 impl Scene for TitleScreen {
-    fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {}
+    fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
+        if rl.is_key_pressed(KeyboardKey::KEY_F6) {
+            self.production_url = !self.production_url;
+        }
+    }
     fn draw(&mut self, _s: &mut SceneAPI, d: &mut RaylibDrawHandle) {
         d.clear_background(Color::GRAY);
+
+        let ip_to_connect_to;
+        if self.production_url {
+            d.draw_text("PRODUCTION URL", 0, 0, 16, Color::RED);
+            ip_to_connect_to = "0.0.0.0:52337";
+        } else {
+            ip_to_connect_to = "143.198.74.108:52337";
+        }
 
         let screen_size = Vector2::new(d.get_screen_width() as f32, d.get_screen_height() as f32);
 
@@ -50,7 +64,7 @@ impl Scene for TitleScreen {
         let mut cur_place_pos = screen_size / 2.0 - set_of_buttons_size / 2.0;
 
         if button(d, cur_place_pos, button_size, "HOST") {
-            match TcpStream::connect("localhost:3333") {
+            match TcpStream::connect(ip_to_connect_to) {
                 Ok(mut stream) => {
                     println!("Successfully connected to server in port 3333");
 
@@ -90,7 +104,7 @@ impl Scene for TitleScreen {
             let lobby_code_string = d.get_clipboard_text().unwrap(); // TODO handle error where clipboard content is not a string, a utf8 error instead
             let lobby_code = lobby_code_string.parse::<i32>().unwrap(); // TODO handle error where clipboard content is not a proper lobby code
 
-            match TcpStream::connect("localhost:3333") {
+            match TcpStream::connect(ip_to_connect_to) {
                 Ok(mut stream) => {
                     println!("Successfully connected to server in port 3333");
                     println!("Requesting to join lobby {}", lobby_code);

@@ -157,7 +157,7 @@ fn main() {
     let lobby_to_host_transmitter: Arc<Mutex<HashMap<i32, mpsc::Sender<TcpStream>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    let listener = TcpListener::bind("0.0.0.0:3333").unwrap();
+    let listener = TcpListener::bind("0.0.0.0:52337").unwrap();
     // accept connections and process them, spawning a new thread for each one
     println!("Server listening on port 3333");
     for stream in listener.incoming() {
