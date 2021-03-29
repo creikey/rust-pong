@@ -254,6 +254,99 @@ impl PongGameState {
     }
 }
 
+struct DebugGraph {
+    // TODO whatever datastructure I end up using for the follback frames should probably be used
+    // here as well
+    data: Vec<f32>,
+    max_points: usize,
+}
+
+impl DebugGraph {
+    fn new(max_points: usize) -> Self {
+        DebugGraph {
+            data: Vec::new(),
+            max_points: max_points,
+        }
+    }
+    fn add_data(&mut self, d: f32) {
+        self.data.push(d);
+        while self.data.len() > self.max_points {
+            self.data.remove(0);
+        }
+    }
+    fn data_to_local_coord(
+        &self,
+        size: Vector2,
+        min_data: f32,
+        max_data: f32,
+        data: f32,
+        data_index: usize,
+    ) -> Vector2 {
+        Vector2::new(
+            size.x * ((data_index as f32) / (self.max_points as f32)),
+            size.y - (((data - min_data) / max_data) * size.y),
+        )
+    }
+
+    fn draw(&self, d: &mut RaylibDrawHandle, pos: Vector2, size: Vector2) {
+        // background of the graph
+        d.draw_rectangle_v(pos, size, Color::new(20, 20, 20, 30));
+        d.draw_line_v(pos, pos + Vector2::new(0.0, size.y), Color::BLACK);
+        d.draw_line_v(pos + Vector2::new(0.0, size.y), pos + size, Color::BLACK);
+
+        // need two points so a line can be drawn
+        if self.data.len() <= 1 {
+            return;
+        }
+
+        // work backwards to draw a line between each point
+        let mut cur_point_index: usize = self.data.len() - 1;
+        // all this because the float might be infinity or nan
+        let max_data = self.data.iter().fold(0.0 as f32, |a, &b| a.max(b));
+        let min_data = self.data.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+        println!("Max: {}", max_data);
+        while cur_point_index > 0 {
+            let cur_point = self.data[cur_point_index];
+            let next_point = self.data[cur_point_index - 1];
+            d.draw_line_v(
+                pos + self.data_to_local_coord(
+                    size,
+                    min_data,
+                    max_data,
+                    cur_point,
+                    cur_point_index,
+                ),
+                pos + self.data_to_local_coord(
+                    size,
+                    min_data,
+                    max_data,
+                    next_point,
+                    cur_point_index - 1,
+                ),
+                Color::RED,
+            );
+
+            cur_point_index -= 1;
+        }
+
+        // draw text for min and max
+        d.draw_text(
+            &max_data.to_string(),
+            (pos.x + size.x) as i32,
+            0,
+            10,
+            Color::BLACK,
+        );
+        d.draw_text(
+            &min_data.to_string(),
+            (pos.x + size.x) as i32,
+            size.y as i32,
+            10,
+            Color::BLACK,
+        );
+    }
+}
+
 struct PongInputAndGameState {
     player_inputs: [PongInputState; 2], // 0 is left, 1 is right
     game_after_inputs: PongGameState,
@@ -268,8 +361,7 @@ pub struct PongGame {
     playing_on_left_side: bool,
 
     // debug info
-    frames_rolled_back: u32,
-    oldest_frame_delay: u32,
+    frames_rolled_back: DebugGraph,
 }
 
 impl PongGame {
@@ -285,8 +377,7 @@ impl PongGame {
             future_inputs: Vec::new(),
             playing_on_left_side: is_host,
             opponent_stream: opponent_stream,
-            frames_rolled_back: 0,
-            oldest_frame_delay: 0,
+            frames_rolled_back: DebugGraph::new(130),
         }
     }
 }
@@ -297,23 +388,8 @@ impl Scene for PongGame {
         self.last_frames[0].game_after_inputs.draw(d);
 
         // debug drawing
-        d.draw_text(
-            &format!("FRMS ROLLED BACK: {}", self.frames_rolled_back),
-            0,
-            0,
-            12,
-            Color::RED,
-        );
-        d.draw_text(
-            &format!(
-                "OLDEST INPUT LATENCY: {} ms",
-                ((self.oldest_frame_delay as f32) * GAME_CONFIG.dt) * 1000.0
-            ),
-            0,
-            30,
-            12,
-            Color::RED,
-        );
+        self.frames_rolled_back
+            .draw(d, Vector2::new(20.0, 20.0), Vector2::new(100.0, 70.0));
     }
 
     fn process(&mut self, _s: &mut SceneAPI, rl: &mut RaylibHandle) {
@@ -360,8 +436,6 @@ impl Scene for PongGame {
             local_player_index = 1;
         }
 
-        self.frames_rolled_back = 0; // updated to not zero if need to roll back
-        self.oldest_frame_delay = 0;
         if remote_inputs.len() == 0 {
             // no remote input received, copy the last input for the appropriate remote player.
         } else {
@@ -395,7 +469,7 @@ impl Scene for PongGame {
                         rl.set_target_fps(59);
                     }
 
-                    self.oldest_frame_delay = self.oldest_frame_delay.max(frame_offset);
+                    self.frames_rolled_back.add_data(frame_offset as f32);
 
                     // set the input of that frame to what was received
                     let must_rollback = self.last_frames[cur_game_state_index as usize]
@@ -406,7 +480,6 @@ impl Scene for PongGame {
                     if must_rollback {
                         self.last_frames[cur_game_state_index as usize].player_inputs
                             [remote_player_index] = remote_input;
-                        self.frames_rolled_back = frame_offset;
                     }
 
                     // in the while loop, after I update the frame's inputs that the remote told me,
